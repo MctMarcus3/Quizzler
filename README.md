@@ -1,13 +1,14 @@
-# Python Flask Quiz Platform
+# Python Flask Quiz Platform (Production Ready)
 
 A dynamic, file-based quiz application built with Python and Flask. This platform supports multiple quiz types, distinct admin and student roles, and manages all data through JSON and CSV files, requiring no external database.
 
-The student experience is a fast, responsive **Single-Page Application (SPA)** that minimizes server load, while the admin panel features a powerful, single-page editor for creating and managing complex question banks with robust validation.
+The student experience is a fast, responsive **Single-Page Application (SPA)** that minimizes server load, while the admin panel features a powerful, single-page editor for creating and managing complex question banks with robust validation. This version is configured for production deployment using a WSGI server and environment variables for security.
 
 ## Core Features
 
 ### Admin Features
 - **Secure Admin Panel:** A separate, protected area for all quiz management at `/admin/login`.
+- **Environment-Based Credentials:** Initial admin username and password are set via a secure `.env` file, not in the code.
 - **In-App Quiz Creation:** Create new question banks from scratch directly within the application.
 - **JSON Upload & Append:**
     - Create new quizzes by uploading a complete JSON file.
@@ -22,7 +23,7 @@ The student experience is a fast, responsive **Single-Page Application (SPA)** t
     - **Flexible Question Selection:**
         - Serve a specific number of questions per type (e.g., 5 multiple-choice, 3 short-answer).
         - Serve a random set of questions that meets or exceeds a **target score**.
-- **Robust Validation:** The server validates all questions (for logical consistency) and display rules (for feasibility) upon saving, providing clear error messages and highlighting the problematic question to prevent broken quizzes.
+- **Robust Validation:** The server validates all questions and display rules upon saving, providing clear error messages and highlighting the problematic question to prevent broken quizzes.
 - **Scalable Form Handling:** The editor is designed to handle extremely long quizzes without hitting server form field limits.
 
 ### Student Features
@@ -35,21 +36,23 @@ The student experience is a fast, responsive **Single-Page Application (SPA)** t
 
 ### General & Technical Features
 - **Multiple Question Types:** Supports Short-Answer, Multiple-Choice (single answer), Multiple-Select (multiple answers), and Multipart questions.
-- **Rich Content Support:** Questions and options fully support **LaTeX** for mathematical notation (via MathJax) and **Markdown** for tables (via Marked.js).
-- **File-Based Storage:** No database needed. Quizzes are stored as individual `.json` files and leaderboards as `.csv` files.
-- **Leaderboards:** A unique leaderboard is generated for each quiz.
+- **Rich Content Support:** Questions and options fully support **LaTeX** (using `\(...\)` for inline and `$$...$$` for display) and **Markdown** tables.
+- **File-Based Storage:** No database needed. Quizzes are stored as `.json` files, leaderboards as `.csv` files.
+- **Production Ready:** Configured to run with a WSGI server (Gunicorn/Waitress) and uses a `.env` file for secrets.
+- **Logging:** Basic production logging is configured to capture errors to a file.
 - **Light/Dark Mode Toggle:** A theme switcher for user comfort.
 
 ## Technology Stack
 
 - **Backend:**
     - **Flask:** A lightweight Python web framework.
-    - **Werkzeug:** For secure password hashing.
+    - **python-dotenv:** For managing environment variables.
+    - **Gunicorn** (Linux/macOS) or **Waitress** (Windows): For production WSGI serving.
 - **Frontend:**
     - **HTML5 / CSS3 / Vanilla JavaScript:** For structure, styling, and all dynamic SPA behavior.
-    - **Pico.css:** A minimalist CSS framework for a clean, modern look.
-    - **MathJax:** For rendering LaTeX mathematical formulas.
-    - **Marked.js:** For rendering Markdown tables.
+    - **Pico.css:** A minimalist CSS framework.
+    - **MathJax:** For rendering LaTeX.
+    - **Marked.js:** For rendering Markdown.
 
 ## Project Structure
 
@@ -57,29 +60,21 @@ The student experience is a fast, responsive **Single-Page Application (SPA)** t
 /quiz_site
 |-- /quizzes                # Stores all quiz JSON files
 |-- /leaderboards           # Stores all leaderboard CSV files
+|-- /logs                   # Stores production log files
 |-- /static
 |   |-- /css/
 |   |-- /js/
 |-- /templates
-|   |-- admin_dashboard.html
-|   |-- create_quiz.html
-|   |-- edit_quiz.html
-|   |-- home.html
-|   |-- instructions.html
-|   |-- layout.html
-|   |-- leaderboard.html
-|   |-- quiz.html
-|   |-- review.html
 |-- /views
-|   |-- __init__.py
-|   |-- admin.py
-|   |-- auth.py
-|   |-- student.py
 |-- app.py                  # Main application factory
 |-- config.py
 |-- data_manager.py
 |-- decorators.py
-|-- users.json              # Stores admin credentials
+|-- .env                    # <-- IMPORTANT: Stores secrets (DO NOT COMMIT)
+|-- .gitignore
+|-- requirements.txt
+|-- run.sh                  # (for Linux/macOS)
+|-- run.bat                 # (for Windows)
 ```
 
 ## Setup and Installation
@@ -103,13 +98,7 @@ The student experience is a fast, responsive **Single-Page Application (SPA)** t
     venv\Scripts\activate
     ```
 
-3.  **Install dependencies:**
-    Create a `requirements.txt` file with the following content:
-    ```
-    Flask
-    Werkzeug
-    ```
-    Then run:
+3.  **Install dependencies from `requirements.txt`:**
     ```bash
     pip install -r requirements.txt
     ```
@@ -121,103 +110,74 @@ The student experience is a fast, responsive **Single-Page Application (SPA)** t
     mkdir leaderboards
     ```
 
-5.  **Run the application:**
-    ```bash
-    python app.py
+5.  **Create the `.env` file:**
+    In the root of your project, create a file named `.env`. Copy the following content into it and **replace the placeholder values with your own secure secrets**.
+
     ```
-    The application will be available at `http://127.0.0.1:5000`.
+    # Flask Configuration
+    # Generate a long, random string for this (e.g., using a password manager or `openssl rand -hex 32`)
+    FLASK_SECRET_KEY="a_very_long_and_super_random_secret_string_for_sessions"
 
-## Usage Guide
+    # Admin User Credentials for Initial Setup
+    ADMIN_USERNAME="admin"
+    ADMIN_PASSWORD="ChooseAReallyStrongPasswordHere"
+    ```
 
-### Administrator Workflow
+6.  **Update your `.gitignore` file:**
+    Ensure that the `.env` file is listed in your `.gitignore` to prevent accidentally committing secrets.
+    ```
+    .env
+    ```
 
-1.  **Login:** Navigate to `http://127.0.0.1:5000/admin/login`.
-    - **Default credentials:** `username: admin`, `password: admin`.
-    - On the first successful login, a `users.json` file will be created to store the hashed password.
+## Running the Application
 
-2.  **Create a Quiz:**
-    - On the dashboard, click "Create Quiz".
-    - Give the quiz a name, set a timer (in seconds), and decide if it should be reviewable.
-    - You will be redirected to the **Quiz Editor**.
+There are two modes for running the application:
 
-3.  **Edit a Quiz:**
-    - Use the "Add New Question" controls to add questions of any type.
-    - For Multiple-Choice and Multiple-Select questions, type the options into the `textarea` (one per line), and a GUI will appear instantly, allowing you to select the correct answer(s).
-    - Configure the **Question Selection Mode** (either by count or by target score).
-    - Click "Save Changes". The server will validate the entire quiz before saving.
+### Development Mode (for coding and testing)
 
-4.  **Get the PIN:** The unique PIN for each quiz is displayed on the admin dashboard. Share this PIN with students.
+This mode uses Flask's built-in server with live reloading and debugging tools.
 
-### Student Workflow
+```bash
+python app.py
+```
+The application will be available at `http://127.0.0.1:5000`. The first time you run the app, the admin user specified in your `.env` file will be created in `users.json`.
 
-1.  **Join a Quiz:** Go to the homepage (`http://127.0.0.1:5000`).
-2.  Enter your name and the PIN provided by the administrator.
-3.  **Review Instructions:** You will see a summary of the quiz. Click "Begin Quiz" to start.
-4.  **Answer Questions:** Answer each question one at a time. Navigation is instantaneous.
-5.  **Submit:** When you click "Finish Quiz," you will be warned if you have any unanswered questions.
-6.  **View Leaderboard:** After finishing, you will see the leaderboard for that quiz.
-7.  **Review Answers:** If the admin enabled it, a "Review Your Answers" button will be available on the leaderboard page.
+### Production Mode (for deployment)
+
+This mode uses a robust WSGI server, disables debug mode, and logs errors to a file. **Do not use `python app.py` for production.**
+
+**On Linux/macOS (using Gunicorn):**
+First, make the run script executable:
+```bash
+chmod +x run.sh
+```
+Then, run the script:
+```bash
+./run.sh
+```
+
+**On Windows (using Waitress):**
+```bash
+run.bat
+```
+The application will be served on `http://0.0.0.0:8000`. Errors will be logged to the `logs/quiz_app.log` file.
 
 ## Quiz JSON Data Format Guide
 
 You can create or append to quizzes by uploading a JSON file. The file must have a top-level key `"questions"` containing a list of question objects.
 
-### Example Question Types
-
-**Short-Answer:**
+**Example Multiple-Select Question with Inline LaTeX:**
 ```json
 {
-  "text": "What is the chemical symbol for gold?",
-  "type": "short-answer",
-  "answer": "Au",
-  "score": 2
-}
-```
-
-**Multiple-Choice (Single Answer):**
-```json
-{
-  "text": "What is the largest planet in our solar system?",
-  "type": "multiple-choice",
-  "options": ["Earth", "Jupiter", "Mars", "Saturn"],
-  "answer": "Jupiter",
-  "score": 1
-}
-```
-
-**Multiple-Select (Multiple Answers):**
-The `answer` must be a list of strings.
-```json
-{
-  "text": "Which of the following are programming languages?",
+  "text": "Which of these are equivalent to \\(x^2\\)?",
   "type": "multiple-select",
-  "options": ["Python", "HTML", "Java", "CSS"],
-  "answer": ["Python", "Java"],
+  "options": [
+    "\\(x \\cdot x\\)",
+    "\\(\\frac{x^4}{x^2}\\)",
+    "\\(2x\\)"
+  ],
+  "answer": ["\\(x \\cdot x\\)", "\\(\\frac{x^4}{x^2}\\)"],
   "score": 3
-}
-```
-
-**Multipart Question:**
-Contains a list of `parts`, where each part is a complete question object.
-```json
-{
-  "text": "This question is about geography. For inline math, use \\( ... \\).",
-  "type": "multipart",
-  "parts": [
-    {
-      "text": "Part A: What is the longest river in the world?",
-      "type": "short-answer",
-      "answer": "The Nile",
-      "score": 2
-    },
-    {
-      "text": "Part B: Which of these continents are in the Southern Hemisphere?",
-      "type": "multiple-select",
-      "options": ["North America", "Australia", "Antarctica", "Europe"],
-      "answer": ["Australia", "Antarctica"],
-      "score": 3
-    }
-  ]
 }
 ```
 
