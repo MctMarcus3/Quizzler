@@ -1,0 +1,111 @@
+{% extends "layout.html" %}
+{% block content %}
+    <hgroup>
+        <h1>Quiz Review</h1>
+        <h2>{{ quiz_name }}</h2>
+    </hgroup>
+
+    {% for item in review_items %}
+    <article>
+        {% set question = item.question %}
+        {% set user_answer = item.user_answer %}
+        
+        <div class="question">{{ question.text | safe }}</div>
+        
+        <!-- Logic for Multipart Questions -->
+        {% if question.type == 'multipart' %}
+            {% for part in question.parts %}
+                {% set part_index = loop.index0 %}
+                {% set user_part_answer = user_answer[part_index] if user_answer and user_answer is iterable and not user_answer is string and user_answer|length > part_index else None %}
+                
+                <fieldset>
+                    <div class="question part">{{ part.text | safe }}</div>
+                    
+                    {% if part.type == 'multiple-select' %}
+                        {% set is_correct = user_part_answer and (user_part_answer|sort == part.answer|sort) %}
+                        <p>
+                            Your Answer(s): <ins>{{ (user_part_answer | join(', ')) or 'No Answer' }}</ins>
+                            {% if is_correct %} ✅ {% else %} ❌ {% endif %}
+                        </p>
+                        <!-- START OF CHANGE -->
+                        {% if not is_correct %}<p>Correct Answer(s): <strong>{{ part.answer | join(', ') }}</strong></p>{% endif %}
+                        <!-- END OF CHANGE -->
+
+                    {% else %} {# Multiple-Choice or Short-Answer Part #}
+                        {% set is_correct = user_part_answer and user_part_answer|string|trim|lower == part.answer|string|trim|lower %}
+                        <p>
+                            Your Answer: <ins>{{ user_part_answer or 'No Answer' }}</ins>
+                            {% if is_correct %} ✅ {% else %} ❌ {% endif %}
+                        </p>
+                        <!-- START OF CHANGE -->
+                        {% if not is_correct %}<p>Correct Answer: <strong>{{ part.answer }}</strong></p>{% endif %}
+                        <!-- END OF CHANGE -->
+                    {% endif %}
+                </fieldset>
+            {% endfor %}
+
+        <!-- Logic for Standard Questions -->
+        {% elif question.type == 'multiple-select' %}
+            {% set is_correct = user_answer and (user_answer|sort == question.answer|sort) %}
+            <p>
+                Your Answer(s): <ins>{{ (user_answer | join(', ')) or 'No Answer' }}</ins>
+                {% if is_correct %} ✅ {% else %} ❌ {% endif %}
+            </p>
+            <!-- START OF CHANGE -->
+            {% if not is_correct %}<p>Correct Answer(s): <strong>{{ question.answer | join(', ') }}</strong></p>{% endif %}
+            <!-- END OF CHANGE -->
+
+        {% else %} {# Multiple-Choice or Short-Answer #}
+            {% set is_correct = user_answer and user_answer|string|trim|lower == question.answer|string|trim|lower %}
+            <p>
+                Your Answer: <ins>{{ user_answer or 'No Answer' }}</ins>
+                {% if is_correct %} ✅ {% else %} ❌ {% endif %}
+            </p>
+            <!-- START OF CHANGE -->
+            {% if not is_correct %}<p>Correct Answer: <strong>{{ question.answer }}</strong></p>{% endif %}
+            <!-- END OF CHANGE -->
+        {% endif %}
+    </article>
+    {% endfor %}
+
+    <a href="{{ url_for('student.home') }}" role="button">Back to Home</a>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', (event) => {
+            // This function safely processes content with both Markdown and MathJax.
+            const safeRender = (element) => {
+                let text = element.innerHTML;
+                const math_inline = [];
+                const math_display = [];
+
+                // 1. Protect MathJax expressions.
+                text = text.replace(/\\\(.*?\\\)/g, (match) => {
+                    math_inline.push(match);
+                    return `%%INLINE_MATH_${math_inline.length - 1}%%`;
+                });
+                text = text.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
+                    math_display.push(match);
+                    return `%%DISPLAY_MATH_${math_display.length - 1}%%`;
+                });
+
+                // 2. Safely run the Markdown parser.
+                text = marked.parse(text);
+
+                // 3. Restore the MathJax expressions.
+                text = text.replace(/<p>%%DISPLAY_MATH_(\d+)%%<\/p>/g, (match, i) => `%%DISPLAY_MATH_${i}%%`);
+                text = text.replace(/%%INLINE_MATH_(\d+)%%/g, (match, i) => math_inline[i]);
+                text = text.replace(/%%DISPLAY_MATH_(\d+)%%/g, (match, i) => math_display[i]);
+
+                element.innerHTML = text;
+            };
+
+            // Run our safe rendering function on all question elements.
+            document.querySelectorAll('.question').forEach(safeRender);
+            
+            // 4. Finally, tell MathJax to render all the math.
+            if (typeof MathJax !== 'undefined' && typeof MathJax.typeset === 'function') {
+                MathJax.typeset();
+            }
+        });
+    </script>
+{% endblock %}

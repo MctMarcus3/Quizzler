@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Site</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/pico.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <!-- This configuration MUST come BEFORE the script is loaded -->
+    <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['$$', '$$']],
+        processEscapes: true // This helps handle backslashes correctly
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre']
+      }
+    };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="{{ url_for('static', filename='js/marked.min.js') }}"></script>
+</head>
+
+<body>
+    <main class="container">
+        <nav>
+            <ul>
+                <li><strong><a href="{{ url_for('student.home') }}">Quiz Master</a></strong></li>
+            </ul>
+            <ul>
+                <!-- THEME TOGGLE BUTTON -->
+                <li><a href="#" id="theme-toggle" data-tooltip="Switch Theme">🌓</a></li>
+
+                {% if session.get('role') == 'admin' %}
+                <li><a href="{{ url_for('admin.admin_dashboard') }}">Dashboard</a></li>
+                <li><a href="{{ url_for('auth.logout') }}">Logout</a></li>
+                <!-- HIDE ADMIN LOGIN DURING QUIZ -->
+                {% elif not hide_nav_login %}
+                <li><a href="{{ url_for('auth.admin_login') }}" role="button" class="secondary">Admin Login</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% block content %}{% endblock %}
+    </main>
+    <script>
+        // Theme Toggler Script
+        const toggle = document.getElementById('theme-toggle');
+        const html = document.documentElement;
+        const currentTheme = localStorage.getItem('theme') || 'light';
+        html.setAttribute('data-theme', currentTheme);
+
+        toggle.addEventListener('click', (e) => {
+            e.preventDefault();
+            const newTheme = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+            html.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+        });
+    </script>
+</body>
+
+</html>

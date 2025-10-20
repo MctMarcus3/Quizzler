@@ -1,0 +1,324 @@
+{% extends "layout.html" %}
+{% block content %}
+    <h2>Edit Quiz: {{ quiz.name }}</h2>
+
+    <!-- Section to display flashed messages, especially for validation errors -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <article class="{{ category }}" aria-live="polite">{{ message }}</article>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- Append Questions from JSON Form -->
+    <details>
+        <summary>Append Questions from JSON</summary>
+        <form method="post" action="{{ url_for('admin.append_questions', quiz_id=quiz.id) }}" enctype="multipart/form-data">
+            <p><small>Upload a JSON file containing a "questions" list to add them to this quiz.</small></p>
+            <input type="file" name="file" accept=".json" required>
+            <button type="submit">Upload and Append</button>
+        </form>
+    </details>
+
+    <form method="post" id="quiz-editor-form">
+        <!-- This single hidden input will hold all quiz data as a JSON string -->
+        <input type="hidden" name="quizData" id="quiz-data-hidden-input">
+        
+        <!-- All visible form fields are now just for the JavaScript to read from -->
+        <div class="grid">
+            <label for="quiz_name">Quiz Name<input type="text" id="quiz_name" value="{{ quiz.name }}" required></label>
+            <label for="quiz_timer">Timer (seconds)<input type="number" id="quiz_timer" value="{{ quiz.timer }}" required></label>
+        </div>
+        <label for="is_reviewable">
+            <input type="checkbox" id="is_reviewable" role="switch" {% if quiz.get('is_reviewable') %}checked{% endif %}>
+            Allow students to review their answers after completion?
+        </label>
+
+        <fieldset><legend>Question Selection Mode</legend>
+            <label><input type="radio" name="display_mode" value="question_count" {% if quiz.display_config.mode == 'question_count' or not quiz.display_config.mode %}checked{% endif %}> By Number of Questions</label>
+            <label><input type="radio" name="display_mode" value="total_score" {% if quiz.display_config.mode == 'total_score' %}checked{% endif %}> By Target Score</label>
+        </fieldset>
+        
+        <fieldset id="config-question-count">
+            <p><small>Set how many questions of each type to randomly show.</small></p>
+            <div class="grid">
+                <label>Multiple Choice<input type="number" name="rule-multiple-choice" value="{{ quiz.display_config.parameters.get('multiple-choice', 0) }}" min="0"></label>
+                <label>Short Answer<input type="number" name="rule-short-answer" value="{{ quiz.display_config.parameters.get('short-answer', 0) }}" min="0"></label>
+                <label>Multiple-Select<input type="number" name="rule-multiple-select" value="{{ quiz.display_config.parameters.get('multiple-select', 0) }}" min="0"></label>
+                <label>Multipart<input type="number" name="rule-multipart" value="{{ quiz.display_config.parameters.get('multipart', 0) }}" min="0"></label>
+            </div>
+        </fieldset>
+        
+        <fieldset id="config-total-score">
+            <label>Target Score
+                <input type="number" name="target_score" value="{{ quiz.display_config.target_score or 10 }}" min="1">
+            </label>
+        </fieldset>
+
+        <hr>
+        <h3>Questions</h3>
+        <div id="questions-container">
+            {% for question in quiz.questions %}
+            <article class="question-article" id="question-{{ loop.index0 }}">
+                <input type="hidden" class="question-type-input" value="{{ question.type }}">
+                <header><b>Question <span class="q-number">{{ loop.index }}</span> (Type: {{ question.type }})</b><button type="button" class="secondary outline delete-question-btn">Delete</button></header>
+                <label>Question Text</label><textarea class="question-text-input" rows="2" required>{{ question.text }}</textarea>
+                
+                {% if question.type in ['multiple-choice', 'multiple-select'] %}
+                    <label>Options (one per line)</label>
+                <textarea class="mc-options-textarea" rows="4" data-answer='{{ question.answer|tojson|safe }}'>{{ question.options | join('\n') }}</textarea>
+                    <fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset>
+                    <label>Score<input type="number" class="question-score-input" value="{{ question.score | default(1) }}" required></label>
+
+                {% elif question.type == 'multipart' %}
+                    <div class="multipart-parts">
+                        <h4>Sub-Questions</h4>
+                        {% for part in question.parts %}
+                        <fieldset class="part-fieldset">
+                            <header><small>Part ({{ part.type }})</small><button type="button" class="delete-part-btn">Remove</button></header>
+                            <input type="hidden" class="part-type-input" value="{{ part.type }}">
+                            <label>Part Text</label><textarea class="part-text-input" rows="2">{{ part.text }}</textarea>
+                            {% if part.type in ['multiple-choice', 'multiple-select'] %}
+                                <label>Options (one per line)</label>
+                            <textarea class="mc-options-textarea" rows="3" data-answer='{{ part.answer|tojson|safe }}'>{{ part.options | join('\n') }}</textarea>
+                                <fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset>
+                            {% else %}
+                                <label>Answer<input type="text" class="part-answer-input" value="{{ part.answer }}"></label>
+                            {% endif %}
+                            <label>Score<input type="number" class="part-score-input" value="{{ part.score }}"></label>
+                        </fieldset>
+                        {% endfor %}
+                    </div>
+                    <footer><button type="button" class="add-part-btn" data-part-type="short-answer">Add Short Answer Part</button> <button type="button" class="add-part-btn" data-part-type="multiple-choice">Add MC Part</button> <button type="button" class="add-part-btn" data-part-type="multiple-select">Add MS Part</button></footer>
+                
+                {% else %}
+                    <div class="grid"><label>Answer<input type="text" class="question-answer-input" value="{{ question.answer }}" required></label><label>Score<input type="number" class="question-score-input" value="{{ question.score | default(1) }}" required></label></div>
+                {% endif %}
+            </article>
+            {% endfor %}
+        </div>
+
+        <fieldset><legend>Add New Question</legend>
+            <div class="grid"><select id="new-question-type"><option value="short-answer">Short Answer</option><option value="multiple-choice">Multiple Choice</option><option value="multiple-select">Multiple-Select</option><option value="multipart">Multipart</option></select><button type="button" id="add-question-btn">Add Question</button></div>
+        </fieldset>
+        
+        <button type="button" id="save-changes-btn" class="contrast">Save Changes</button>
+    </form>
+    
+    <!-- --- JAVASCRIPT TEMPLATES --- -->
+    <template id="template-short-answer"><article class="question-article"><input type="hidden" class="question-type-input" value="short-answer"><header><b>Question <span class="q-number"></span> (Type: short-answer)</b> <button type="button" class="secondary outline delete-question-btn">Delete</button></header><label>Question Text</label><textarea class="question-text-input" rows="2" required></textarea><div class="grid"><label>Answer<input type="text" class="question-answer-input" required></label><label>Score<input type="number" class="question-score-input" value="1" required></label></div></article></template>
+    <template id="template-multiple-choice"><article class="question-article"><input type="hidden" class="question-type-input" value="multiple-choice"><header><b>Question <span class="q-number"></span> (Type: multiple-choice)</b> <button type="button" class="secondary outline delete-question-btn">Delete</button></header><label>Question Text</label><textarea class="question-text-input" rows="2" required></textarea><label>Options (one per line)</label><textarea class="mc-options-textarea" rows="4"></textarea><fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset><label>Score<input type="number" class="question-score-input" value="1" required></label></article></template>
+    <template id="template-multiple-select"><article class="question-article"><input type="hidden" class="question-type-input" value="multiple-select"><header><b>Question <span class="q-number"></span> (Type: multiple-select)</b> <button type="button" class="secondary outline delete-question-btn">Delete</button></header><label>Question Text</label><textarea class="question-text-input" rows="2" required></textarea><label>Options (one per line)</label><textarea class="mc-options-textarea" rows="4"></textarea><fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset><label>Score<input type="number" class="question-score-input" value="1" required></label></article></template>
+    <template id="template-multipart"><article class="question-article"><input type="hidden" class="question-type-input" value="multipart"><header><b>Question <span class="q-number"></span> (Type: multipart)</b> <button type="button" class="secondary outline delete-question-btn">Delete</button></header><label>Main Question Text</label><textarea class="question-text-input" rows="2" required></textarea><div class="multipart-parts"><h4>Sub-Questions</h4></div><footer><button type="button" class="add-part-btn" data-part-type="short-answer">Add Short Answer Part</button> <button type="button" class="add-part-btn" data-part-type="multiple-choice">Add MC Part</button> <button type="button" class="add-part-btn" data-part-type="multiple-select">Add MS Part</button></footer></article></template>
+    <template id="template-part-short-answer"><fieldset class="part-fieldset"><header><small>Part (short-answer)</small><button type="button" class="delete-part-btn">Remove</button></header><input type="hidden" class="part-type-input" value="short-answer"><label>Part Text</label><textarea class="part-text-input" rows="2"></textarea><div class="grid"><label>Answer<input type="text" class="part-answer-input"></label><label>Score<input type="number" class="part-score-input" value="1"></label></div></fieldset></template>
+    <template id="template-part-multiple-choice"><fieldset class="part-fieldset"><header><small>Part (multiple-choice)</small><button type="button" class="delete-part-btn">Remove</button></header><input type="hidden" class="part-type-input" value="multiple-choice"><label>Part Text</label><textarea class="part-text-input" rows="2"></textarea><label>Options (one per line)</label><textarea class="mc-options-textarea" rows="3"></textarea><fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset><label>Score<input type="number" class="part-score-input" value="1"></label></fieldset></template>
+    <template id="template-part-multiple-select"><fieldset class="part-fieldset"><header><small>Part (multiple-select)</small><button type="button" class="delete-part-btn">Remove</button></header><input type="hidden" class="part-type-input" value="multiple-select"><label>Part Text</label><textarea class="part-text-input" rows="2"></textarea><label>Options (one per line)</label><textarea class="mc-options-textarea" rows="3"></textarea><fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset><label>Score<input type="number" class="part-score-input" value="1"></label></fieldset></template>
+
+<!-- --- JAVASCRIPT FOR DYNAMIC FUNCTIONALITY --- -->
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const mainForm = document.getElementById('quiz-editor-form');
+        const hiddenInput = document.getElementById('quiz-data-hidden-input');
+        const saveButton = document.getElementById('save-changes-btn');
+        const questionsContainer = document.getElementById('questions-container');
+        let newQuestionCounter = 0;
+
+        const buildQuizObject = () => {
+            const quizObj = {
+                name: document.getElementById('quiz_name').value,
+                timer: parseInt(document.getElementById('quiz_timer').value),
+                is_reviewable: document.getElementById('is_reviewable').checked,
+                display_config: {
+                    mode: document.querySelector('input[name="display_mode"]:checked').value,
+                    parameters: {
+                        'multiple-choice': parseInt(document.querySelector('input[name="rule-multiple-choice"]').value),
+                        'short-answer': parseInt(document.querySelector('input[name="rule-short-answer"]').value),
+                        'multiple-select': parseInt(document.querySelector('input[name="rule-multiple-select"]').value),
+                        'multipart': parseInt(document.querySelector('input[name="rule-multipart"]').value),
+                    },
+                    target_score: parseInt(document.querySelector('input[name="target_score"]').value)
+                },
+                questions: []
+            };
+            document.querySelectorAll('.question-article').forEach(article => {
+                const qType = article.querySelector('.question-type-input').value;
+                const qText = article.querySelector('.question-text-input').value;
+                let questionData = { text: qText, type: qType };
+                if (qType === 'multipart') {
+                    questionData.parts = [];
+                    article.querySelectorAll('.part-fieldset').forEach(part => {
+                        const pType = part.querySelector('.part-type-input').value;
+                        const pText = part.querySelector('.part-text-input').value;
+                        let pData = { text: pText, type: pType, score: parseInt(part.querySelector('.part-score-input').value) };
+                        if (pType === 'multiple-select') {
+                            pData.answer = Array.from(part.querySelectorAll('.answer-gui-container input:checked')).map(el => el.value);
+                            pData.options = part.querySelector('.mc-options-textarea').value.split('\n').filter(Boolean).map(s => s.trim());
+                        } else if (pType === 'multiple-choice') {
+                            const checkedRadio = part.querySelector('.answer-gui-container input:checked');
+                            pData.answer = checkedRadio ? checkedRadio.value : null;
+                            pData.options = part.querySelector('.mc-options-textarea').value.split('\n').filter(Boolean).map(s => s.trim());
+                        } else {
+                            pData.answer = part.querySelector('.part-answer-input').value;
+                        }
+                        questionData.parts.push(pData);
+                    });
+                } else { // Not multipart
+                    questionData.score = parseInt(article.querySelector('.question-score-input').value);
+                    if (qType === 'multiple-select') {
+                        questionData.answer = Array.from(article.querySelectorAll('.answer-gui-container input:checked')).map(el => el.value);
+                        questionData.options = article.querySelector('.mc-options-textarea').value.split('\n').filter(Boolean).map(s => s.trim());
+                    } else if (qType === 'multiple-choice') {
+                        const checkedRadio = article.querySelector('.answer-gui-container input:checked');
+                        questionData.answer = checkedRadio ? checkedRadio.value : null;
+                        questionData.options = article.querySelector('.mc-options-textarea').value.split('\n').filter(Boolean).map(s => s.trim());
+                    } else { // short-answer
+                        questionData.answer = article.querySelector('.question-answer-input').value;
+                    }
+                }
+                quizObj.questions.push(questionData);
+            });
+            return quizObj;
+        };
+
+        const updateAnswerGui = (optionsTextarea) => {
+            const container = optionsTextarea.closest('.question-article, .part-fieldset');
+            const guiContainer = container.querySelector('.answer-gui-container');
+            if (!guiContainer) return;
+            const questionTypeInput = container.querySelector('.question-type-input, .part-type-input');
+            if (!questionTypeInput) return;
+            const questionType = questionTypeInput.value;
+            const inputType = (questionType === 'multiple-choice') ? 'radio' : 'checkbox';
+            const uniqueName = `answer-gui-${Math.random()}`; // Unique name for each radio group
+            
+            let selectionToPreserve;
+            if (guiContainer.querySelectorAll('input').length > 0) {
+                selectionToPreserve = Array.from(guiContainer.querySelectorAll('input:checked')).map(el => el.value);
+            } else {
+                const savedAnswerJson = optionsTextarea.dataset.answer;
+                const savedAnswer = savedAnswerJson ? JSON.parse(savedAnswerJson) : [];
+                selectionToPreserve = Array.isArray(savedAnswer) ? savedAnswer : [savedAnswer];
+            }
+            
+            guiContainer.innerHTML = '<legend>Correct Answer(s)</legend>'; // Reset but keep legend
+            const options = optionsTextarea.value.split('\n').filter(opt => opt.trim() !== '');
+            options.forEach(optionText => {
+                const trimmedOption = optionText.trim();
+                const label = document.createElement('label');
+                const input = document.createElement('input');
+                input.type = inputType;
+                input.name = uniqueName; // Use unique name for this group
+                input.value = trimmedOption;
+                if (selectionToPreserve.includes(trimmedOption)) {
+                    input.checked = true;
+                }
+                label.appendChild(input);
+                label.appendChild(document.createTextNode(' ' + optionText));
+                guiContainer.appendChild(label);
+            });
+        };
+        // --- Helper Functions ---
+        const updateQuestionNumbers = () => {
+            questionsContainer.querySelectorAll('.question-article').forEach((article, index) => {
+                const qNumSpan = article.querySelector('.q-number');
+                if (qNumSpan) qNumSpan.textContent = index + 1;
+            });
+        };
+
+        const toggleConfigView = () => {
+            const selectedMode = document.querySelector('input[name="display_mode"]:checked').value;
+            document.getElementById('config-question-count').style.display = (selectedMode === 'question_count') ? 'grid' : 'none';
+            document.getElementById('config-total-score').style.display = (selectedMode === 'total_score') ? 'block' : 'none';
+        };
+
+        const addPart = (multipartArticle, partType) => {
+            const partTemplate = document.getElementById(`template-part-${partType}`);
+            const qIndexMatch = multipartArticle.querySelector('input[name*="question-"]').name.match(/question-([^-\s]+)/);
+            if (!qIndexMatch) return;
+            const qIndex = qIndexMatch[1];
+            
+            const partContainer = multipartArticle.querySelector('.multipart-parts');
+            const newPartCounter = partContainer.querySelectorAll('.part-fieldset').length;
+            const pIndex = `new-${newPartCounter}`;
+
+            const partClone = document.createElement('div');
+            let partHtml = partTemplate.innerHTML.replace(/{q_index}/g, qIndex).replace(/{p_index}/g, pIndex);
+            partClone.innerHTML = partHtml;
+            const newPart = partClone.firstElementChild;
+            partContainer.appendChild(newPart);
+
+            newPart.querySelectorAll('.mc-options-textarea').forEach(updateAnswerGui);
+        };
+
+        // --- Event Listeners ---
+        saveButton.addEventListener('click', () => {
+            saveButton.setAttribute('aria-busy', 'true');
+            saveButton.textContent = 'Saving...';
+            try {
+                const quizData = buildQuizObject();
+                hiddenInput.value = JSON.stringify(quizData, null, 2);
+                mainForm.submit();
+            } catch (error) {
+                console.error("Error building quiz object for submission:", error);
+                alert("A critical error occurred while trying to save. Please check the browser console (F12) for details.");
+                saveButton.removeAttribute('aria-busy');
+                saveButton.textContent = 'Save Changes';
+            }
+        });
+
+        document.body.addEventListener('input', e => {
+            if (e.target.matches('.mc-options-textarea')) updateAnswerGui(e.target);
+        });
+
+        document.body.addEventListener('click', (e) => {
+            if (e.target.matches('.delete-question-btn')) {
+                e.preventDefault();
+                if (confirm('Are you sure you want to delete this question?')) {
+                    e.target.closest('.question-article').remove();
+                    updateQuestionNumbers();
+                }
+            }
+            if (e.target.matches('.delete-part-btn')) {
+                e.preventDefault();
+                if (confirm('Are you sure you want to delete this part?')) {
+                    e.target.closest('.part-fieldset').remove();
+                }
+            }
+            if (e.target.matches('.add-part-btn')) {
+                e.preventDefault();
+                addPart(e.target.closest('.question-article'), e.target.dataset.partType);
+            }
+        });
+        
+        document.getElementById('add-question-btn').addEventListener('click', () => {
+            const questionType = document.getElementById('new-question-type').value;
+            const template = document.getElementById(`template-${questionType}`);
+            const newIndex = `new-${newQuestionCounter++}`;
+            const clone = document.createElement('div');
+            clone.innerHTML = template.innerHTML.replace(/{q_index}/g, newIndex);
+            const newArticle = clone.firstElementChild;
+            questionsContainer.appendChild(newArticle);
+            newArticle.querySelectorAll('.mc-options-textarea').forEach(updateAnswerGui);
+            updateQuestionNumbers();
+        });
+
+        document.querySelectorAll('.mc-options-textarea').forEach(updateAnswerGui);
+
+        // The rest of the initializers
+        const urlParams = new URLSearchParams(window.location.search);
+        const errorQIndex = urlParams.get('error_q');
+        if (errorQIndex) {
+            const errorArticle = document.getElementById(`question-${errorQIndex}`);
+            if (errorArticle) {
+                errorArticle.style.border = '2px solid var(--pico-color-red-500)';
+                errorArticle.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+        document.querySelectorAll('input[name="display_mode"]').forEach(radio => radio.addEventListener('change', toggleConfigView));
+        toggleConfigView();
+        updateQuestionNumbers();
+        // --- END OF THE DEFINITIVE FIX ---
+    });
+
+</script>
+{% endblock %}

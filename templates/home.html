@@ -1,0 +1,26 @@
+{% extends "layout.html" %}
+{% block content %}
+    <hgroup>
+        <h1>Welcome to Quiz Master</h1>
+        <h2>Enter your name and a quiz PIN to begin.</h2>
+    </hgroup>
+    
+    <!-- Flash message display -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <article class="{{ category }}">{{ message }}</article>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form method="post" action="{{ url_for('student.start_quiz') }}">
+        <label for="name">Your Name</label>
+        <input type="text" id="name" name="name" placeholder="Enter your name" value="{{ prefill_name or '' }}" required>
+
+        <label for="pin">Quiz PIN</label>
+        <input type="text" id="pin" name="pin" placeholder="Enter quiz PIN" required>
+
+        <button type="submit">Start Quiz</button>
+    </form>
+{% endblock %}

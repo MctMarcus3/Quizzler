@@ -1,0 +1,24 @@
+{% extends "layout.html" %}
+{% block content %}
+    <article>
+        <header>
+            <h2>Quiz Instructions</h2>
+        </header>
+        <h3>{{ quiz.name }}</h3>
+        <ul>
+            <li><strong>Number of Questions:</strong> {{ total_questions }}</li>
+            <li>
+                <strong>Time Limit:</strong> 
+                {% if quiz.timer > 0 %}
+                    {{ (quiz.timer / 60)|round|int }} minutes
+                {% else %}
+                    <strong>Unlimited</strong>
+                {% endif %}
+            </li>
+        </ul>
+        <p>Once you begin, the timer (if applicable) will start. Do not refresh the page during the quiz.</p>
+        <footer>
+            <a href="{{ url_for('student.take_quiz', q_num=1) }}" role="button" class="contrast">Begin Quiz</a>
+        </footer>
+    </article>
+{% endblock %}

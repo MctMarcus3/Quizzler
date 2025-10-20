@@ -1,0 +1,21 @@
+{% extends "layout.html" %}
+{% block content %}
+    <h2>Create a New Question Bank</h2>
+    <p>This will create an empty quiz. You will be redirected to the editor to add questions.</p>
+
+    <form method="post">
+        <label for="quiz_name">
+            Quiz Name
+            <input type="text" id="quiz_name" name="quiz_name" placeholder="e.g., General Knowledge 101" required>
+        </label>
+        <label for="quiz_timer">
+            Timer (in seconds)
+            <input type="number" id="quiz_timer" name="quiz_timer" value="600" required>
+        </label>
+        <label for="is_reviewable">
+            <input type="checkbox" id="is_reviewable" name="is_reviewable" role="switch" checked>
+            Allow students to review their answers after completion?
+        </label>
+        <button type="submit">Create and Edit</button>
+    </form>
+{% endblock %}

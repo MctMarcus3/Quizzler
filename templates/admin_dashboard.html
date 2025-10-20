@@ -1,0 +1,60 @@
+{% extends "layout.html" %}
+{% block content %}
+    <h2>Admin Dashboard</h2>
+
+    <!-- Flash message display -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <article class="{{ category }}">{{ message }}</article>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    
+    <!-- Arrange controls in a grid for better layout -->
+    <div class="grid">
+        <article>
+            <h3>Create New Quiz</h3>
+            <p>Start a new question bank from scratch.</p>
+            <a href="{{ url_for('admin.create_quiz') }}" role="button">Create Quiz</a>
+        </article>
+
+        <article>
+            <h3>Upload Quiz</h3>
+            <p>Upload a pre-made quiz from a JSON file.</p>
+            <form method="post" action="{{ url_for('admin.upload_quiz') }}" enctype="multipart/form-data">
+                <input type="file" name="file" accept=".json" required>
+                <button type="submit">Upload</button>
+            </form>
+        </article>
+    </div>
+
+    <section>
+        <h3>Existing Quizzes</h3>
+        {% if quizzes %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Quiz Name</th>
+                    <th>PIN</th>
+                    <th>Quiz ID</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for quiz in quizzes %}
+                <tr>
+                    <td>{{ quiz.name }}</td>
+                    <td><strong>{{ quiz.pin }}</strong></td>
+                    <td>
+                        <!-- EDIT BUTTON -->
+                        <a href="{{ url_for('admin.edit_quiz', quiz_id=quiz.id) }}" role="button" class="outline">Edit</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>No quizzes have been uploaded yet.</p>
+        {% endif %}
+    </section>
+{% endblock %}

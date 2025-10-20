@@ -1,0 +1,211 @@
+{% extends "layout.html" %}
+{% block content %}
+    <hgroup>
+        <h1>{{ quiz.name }}</h1>
+        <h2 id="question-counter">Loading...</h2>
+    </hgroup>
+    
+    {% if quiz.timer > 0 %}
+    <div id="timer" role="timer" aria-live="polite">Time Left: <span>{{ quiz.timer }}</span>s</div>
+    {% endif %}
+
+    <article id="quiz-container">
+        <div id="question-content"></div>
+        <div class="grid">
+            <button id="prev-btn" class="secondary" style="visibility: hidden;">Previous</button>
+            <button id="next-btn">Next</button>
+        </div>
+    </article>
+
+    <form id="submission-form" method="post" action="{{ url_for('student.submit_quiz') }}" style="display: none;">
+        <input type="hidden" name="answers" id="answers-input">
+    </form>
+
+    <script>
+        const quizData = {{ quiz_data|tojson|safe }};
+        const totalQuestions = quizData.length;
+        
+        document.addEventListener('DOMContentLoaded', (event) => {
+ 
+            let currentQuestionIndex = 0;
+            const userAnswers = {};
+
+            const questionCounter = document.getElementById('question-counter');
+            const questionContent = document.getElementById('question-content');
+            const prevBtn = document.getElementById('prev-btn');
+            const nextBtn = document.getElementById('next-btn');
+            const submissionForm = document.getElementById('submission-form');
+            const answersInput = document.getElementById('answers-input');
+            // --- START OF THE DEFINITIVE FIX ---
+            const safeRender = (text) => {
+                if (!text) return '';
+                const math_inline = [];
+                const math_display = [];
+                let protectedText = text.replace(/\\\(.*?\\\)/g, (match) => {
+                    math_inline.push(match);
+                    return `%%INLINE_MATH_${math_inline.length - 1}%%`;
+                });
+                protectedText = protectedText.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
+                    math_display.push(match);
+                    return `%%DISPLAY_MATH_${math_display.length - 1}%%`;
+                });
+                let html = marked.parse(protectedText);
+                html = html.replace(/<p>%%DISPLAY_MATH_(\d+)%%<\/p>/g, (match, i) => `%%DISPLAY_MATH_${i}%%`);
+                html = html.replace(/%%INLINE_MATH_(\d+)%%/g, (match, i) => math_inline[i]);
+                html = html.replace(/%%DISPLAY_MATH_(\d+)%%/g, (match, i) => math_display[i]);
+                return html;
+            };
+
+            const renderQuestion = (index) => {
+                const question = quizData[index];
+                questionCounter.textContent = `Question ${index + 1} of ${totalQuestions}`;
+                
+                // Use the new safeRender function for question and part text
+                let html = `<div class="question">${safeRender(question.text)}</div><form onsubmit="return false;">`;
+
+                if (question.type === 'multipart') {
+                    question.parts.forEach((part, partIndex) => {
+                        const partAnswer = (userAnswers[index] && userAnswers[index][partIndex]) ? userAnswers[index][partIndex] : null;
+                        html += `<fieldset><div class="question part">${safeRender(part.text)}</div>`; // Use safeRender here
+                        
+                        if (part.type === 'multiple-select' || part.type === 'multiple-choice') {
+                             part.options.forEach(opt => {
+                                const inputType = part.type === 'multiple-choice' ? 'radio' : 'checkbox';
+                                const name = `answer-part-${partIndex}`;
+                                const isChecked = (part.type === 'multiple-select' ? (partAnswer && partAnswer.includes(opt)) : (partAnswer === opt)) ? 'checked' : '';
+                                // Options are NOT parsed by Markdown, so no safeRender needed
+                                html += `<label><input type="${inputType}" name="${name}" value="${opt}" ${isChecked}> ${opt}</label><br>`;
+                            });
+                        } else {
+                            const val = partAnswer || '';
+                            html += `<input type="text" name="answer-part-${partIndex}" value="${val}">`;
+                        }
+                        html += `</fieldset>`;
+                    });
+                } else if (question.type === 'multiple-select' || question.type === 'multiple-choice') {
+                    const answer = userAnswers[index];
+                    const inputType = question.type === 'multiple-choice' ? 'radio' : 'checkbox';
+                    question.options.forEach(opt => {
+                        const isChecked = (question.type === 'multiple-select' ? (answer && answer.includes(opt)) : (answer === opt)) ? 'checked' : '';
+                        html += `<label><input type="${inputType}" name="answer" value="${opt}" ${isChecked}> ${opt}</label><br>`;
+                    });
+                } else {
+                    const answer = userAnswers[index] || '';
+                    html += `<input type="text" name="answer" value="${answer}">`;
+                }
+
+                html += `</form>`;
+                questionContent.innerHTML = html;
+                if (typeof MathJax !== 'undefined' && typeof MathJax.typeset === 'function') {
+                    MathJax.typeset();
+                }
+
+                prevBtn.style.visibility = (index === 0) ? 'hidden' : 'visible';
+                nextBtn.textContent = (index === totalQuestions - 1) ? 'Finish Quiz' : 'Next';
+            };
+
+            const saveCurrentAnswer = () => {
+                const question = quizData[currentQuestionIndex];
+                if (!question) return;
+                const form = questionContent.querySelector('form');
+                if (!form) return;
+
+                if (question.type === 'multiple-select') {
+                    userAnswers[currentQuestionIndex] = Array.from(form.querySelectorAll('input[name="answer"]:checked')).map(el => el.value);
+                } else if (question.type === 'multipart') {
+                    const partsAnswers = [];
+                    question.parts.forEach((part, index) => {
+                        if (part.type === 'multiple-select') {
+                            partsAnswers.push(Array.from(form.querySelectorAll(`input[name="answer-part-${index}"]:checked`)).map(el => el.value));
+                        } else {
+                            const input = form.querySelector(`input[name="answer-part-${index}"]`);
+                            partsAnswers.push(input ? input.value : null);
+                        }
+                    });
+                    userAnswers[currentQuestionIndex] = partsAnswers;
+                } else {
+                    const input = form.querySelector('input[name="answer"]:checked, input[type="text"][name="answer"]');
+                    userAnswers[currentQuestionIndex] = input ? input.value : null;
+                }
+            };
+            
+            const checkCompletion = () => {
+                let unansweredCount = 0;
+                for (let i = 0; i < totalQuestions; i++) {
+                    const answer = userAnswers[i];
+                    let isAnswered = false;
+                    if (Array.isArray(answer)) {
+                        // For multiple-select and multipart, check if the array is not empty
+                        // and for multipart, that sub-arrays are not all empty/null.
+                        isAnswered = answer.length > 0 && answer.some(part => (Array.isArray(part) ? part.length > 0 : part));
+                    } else if (answer) {
+                        // For short-answer and multiple-choice
+                        isAnswered = true;
+                    }
+                    if (!isAnswered) {
+                        unansweredCount++;
+                    }
+                }
+                return unansweredCount;
+            };
+
+            // This function handles the final submission logic.
+            const finishQuiz = () => {
+                // Final answer save before submitting
+                saveCurrentAnswer();
+
+                const unanswered = checkCompletion();
+
+                if (unanswered > 0) {
+                    const confirmation = confirm(`You have ${unanswered} unanswered question(s). Are you sure you want to submit?`);
+                    if (!confirmation) {
+                        return; // Stop the submission process
+                    }
+                }
+                
+                // If all answered, or if user confirmed, proceed with submission.
+                answersInput.value = JSON.stringify(userAnswers);
+                submissionForm.submit();
+            };
+
+            nextBtn.addEventListener('click', () => {
+                if (currentQuestionIndex < totalQuestions - 1) {
+                    saveCurrentAnswer();
+                    currentQuestionIndex++;
+                    renderQuestion(currentQuestionIndex);
+                } else {
+                    // On the last question, the "Next" button becomes "Finish Quiz"
+                    // and now calls our new completion check function.
+                    finishQuiz();
+                }
+            });
+
+            prevBtn.addEventListener('click', () => {
+                saveCurrentAnswer();
+                if (currentQuestionIndex > 0) {
+                    currentQuestionIndex--;
+                    renderQuestion(currentQuestionIndex);
+                }
+            });
+
+            renderQuestion(0);
+
+            const timerDisplay = document.getElementById('timer');
+            const quizTimer = {{ quiz.timer }};
+            if (timerDisplay && quizTimer > 0) {
+                const startTime = new Date("{{ session.start_time }}Z");
+                const timerInterval = setInterval(() => {
+                    const elapsed = Math.floor((new Date() - startTime) / 1000);
+                    const timeLeft = quizTimer - elapsed;
+                    if (timeLeft <= 0) {
+                        clearInterval(timerInterval);
+                        answersInput.value = JSON.stringify(userAnswers);
+                        submissionForm.submit();
+                    } else {
+                        timerDisplay.querySelector('span').textContent = timeLeft;
+                    }
+                }, 1000);
+            }
+        });
+    </script>
+{% endblock %}
