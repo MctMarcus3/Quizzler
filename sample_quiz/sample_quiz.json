@@ -1,0 +1,128 @@
+{
+  "name": "Comprehensive Sample Quiz",
+  "timer": 900,
+  "is_reviewable": true,
+  "display_config": {
+    "mode": "question_count",
+    "parameters": {
+      "multiple-choice": 2,
+      "short-answer": 2,
+      "multiple-select": 2,
+      "multipart": 1
+    },
+    "target_score": 10
+  },
+  "questions": [
+    {
+      "text": "What is the chemical symbol for Silver?",
+      "type": "short-answer",
+      "answer": "Ag",
+      "score": 1
+    },
+    {
+      "text": "What is the capital of Australia?",
+      "type": "short-answer",
+      "answer": "Canberra",
+      "score": 2
+    },
+    {
+      "text": "Which planet is known as the Red Planet?",
+      "type": "multiple-choice",
+      "options": [
+        "Earth",
+        "Mars",
+        "Jupiter",
+        "Venus"
+      ],
+      "answer": "Mars",
+      "score": 1
+    },
+    {
+      "text": "What is the value of the integral $$ \\int_0^1 3x^2 dx $$ ?",
+      "type": "multiple-choice",
+      "options": [
+        "0",
+        "1",
+        "2",
+        "3"
+      ],
+      "answer": "1",
+      "score": 3
+    },
+    {
+      "text": "Which of the following are prime numbers?",
+      "type": "multiple-select",
+      "options": [
+        "2",
+        "9",
+        "13",
+        "15",
+        "19"
+      ],
+      "answer": [
+        "2",
+        "13",
+        "19"
+      ],
+      "score": 4
+    },
+    {
+      "text": "Which of these expressions are equivalent to \\( (x+y)^2 \\)?",
+      "type": "multiple-select",
+      "options": [
+        "\\( x^2 + 2xy + y^2 \\)",
+        "\\( x^2 + y^2 \\)",
+        "\\( (x+y)(x+y) \\)"
+      ],
+      "answer": [
+        "\\( x^2 + 2xy + y^2 \\)",
+        "\\( (x+y)(x+y) \\)"
+      ],
+      "score": 3
+    },
+    {
+      "text": "This multipart question covers basic physics concepts.",
+      "type": "multipart",
+      "parts": [
+        {
+          "text": "Part A: What is the standard unit of force in the International System of Units (SI)?",
+          "type": "short-answer",
+          "answer": "Newton",
+          "score": 2
+        },
+        {
+          "text": "Part B: If force is \\( F \\) and mass is \\( m \\), what is Newton's Second Law for acceleration (\\( a \\))?",
+          "type": "multiple-choice",
+          "options": [
+            "\\( a = F \\cdot m \\)",
+            "\\( a = F / m \\)",
+            "\\( a = m / F \\)"
+          ],
+          "answer": "\\( a = F / m \\)",
+          "score": 3
+        },
+        {
+          "text": "Part C: Which of the following are vector quantities?",
+          "type": "multiple-select",
+          "options": [
+            "Speed",
+            "Velocity",
+            "Mass",
+            "Force"
+          ],
+          "answer": [
+            "Velocity",
+            "Force"
+          ],
+          "score": 4
+        }
+      ]
+    },
+    {
+        "text": "This question tests Markdown table rendering. What is the capital of Canada?\n\n| Country | Capital |\n| --- | --- |\n| USA | Washington D.C. |\n| Canada | Ottawa |\n| Mexico | Mexico City |",
+        "type": "short-answer",
+        "answer": "Ottawa",
+        "score": 2
+    }
+  ]
+}
