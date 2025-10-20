@@ -31,8 +31,19 @@ def save_users(users):
     with open(USER_DATA_FILE, 'w') as f:
         json.dump(users, f, indent=4)
 
+# --- Helper function for backward compatibility ---
+def _ensure_backward_compatibility(quiz_data):
+    """Checks for and adds missing keys like display_config to older quiz files."""
+    if 'display_config' not in quiz_data:
+        print(f"INFO: Upgrading old quiz format for quiz ID {quiz_data.get('id')}. Adding default display_config.")
+        quiz_data['display_config'] = {
+            'mode': 'question_count',
+            'parameters': { 'multiple-choice': 0, 'short-answer': 0, 'multiple-select': 0, 'multipart': 0 },
+            'target_score': 10
+        }
+    return quiz_data
 
-# --- Quiz Management ---
+# --- Quiz Management (MODIFIED) ---
 
 def get_all_quizzes():
     """Scans the quiz directory and returns data from all quiz JSON files."""
@@ -42,15 +53,30 @@ def get_all_quizzes():
     for filename in os.listdir(QUIZ_DIR):
         if filename.endswith('.json'):
             with open(os.path.join(QUIZ_DIR, filename), 'r') as f:
-                quizzes.append(json.load(f))
+                try:
+                    quiz_data = json.load(f)
+                    # --- START OF THE FIX ---
+                    quiz_data = _ensure_backward_compatibility(quiz_data)
+                    # --- END OF THE FIX ---
+                    quizzes.append(quiz_data)
+                except json.JSONDecodeError:
+                    print(f"ERROR: Could not parse {filename}. It may be a corrupted JSON file.")
     return quizzes
 
 def get_quiz_by_id(quiz_id):
-    """Loads a single quiz by its ID (filename)."""
+    """Loads a single quiz by its ID and ensures it's backward-compatible."""
     quiz_path = os.path.join(QUIZ_DIR, f"{quiz_id}.json")
     if os.path.exists(quiz_path):
         with open(quiz_path, 'r') as f:
-            return json.load(f)
+            try:
+                quiz_data = json.load(f)
+                # --- START OF THE FIX ---
+                quiz_data = _ensure_backward_compatibility(quiz_data)
+                # --- END OF THE FIX ---
+                return quiz_data
+            except json.JSONDecodeError:
+                print(f"ERROR: Could not parse {quiz_id}.json. It may be a corrupted JSON file.")
+                return None
     return None
 
 def save_quiz(quiz_id, quiz_data):
