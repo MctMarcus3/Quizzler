@@ -250,7 +250,24 @@
             newPart.querySelectorAll('.mc-options-textarea').forEach(updateAnswerGui);
         };
 
-        // --- Event Listeners ---
+
+
+        // This is a robust, standard helper function to convert raw binary data (Uint8Array)
+        // to a Base64 string without corrupting it.
+        const uint8ArrayToBase64 = (uint8Array) => {
+            let CHUNK_SIZE = 0x8000; // 32k chunks
+            let index = 0;
+            const length = uint8Array.length;
+            let result = '';
+            let slice;
+            while (index < length) {
+                slice = uint8Array.subarray(index, Math.min(index + CHUNK_SIZE, length));
+                result += String.fromCharCode.apply(null, slice);
+                index += CHUNK_SIZE;
+            }
+            return btoa(result);
+        };
+
         saveButton.addEventListener('click', () => {
             saveButton.setAttribute('aria-busy', 'true');
             saveButton.textContent = 'Compressing & Saving...';
@@ -259,18 +276,19 @@
                 const quizData = buildQuizObject();
                 const jsonString = JSON.stringify(quizData);
 
-                // 2. Compress the JSON string using pako.
-                const compressed = pako.deflate(jsonString, { to: 'string' });
+                // 2. Compress the JSON string directly to raw binary (a Uint8Array).
+                //    We have REMOVED the fragile `{ to: 'string' }` option.
+                const compressed = pako.deflate(jsonString);
                 
-                // 3. Encode the compressed data in Base64 to ensure it's a simple string.
-                const base64Encoded = btoa(compressed);
+                // 3. Encode the raw binary data directly to Base64 using our new, robust helper function.
+                const base64Encoded = uint8ArrayToBase64(compressed);
                 
-                // 4. Put the compressed, encoded string into the hidden input.
+                // 4. Put the clean, uncorrupted Base64 string into the hidden input.
                 hiddenInput.value = base64Encoded;
                 
                 mainForm.submit();
             } catch (error) {
-                console.error("Error building quiz object for submission:", error);
+                console.error("Error building or compressing quiz object for submission:", error);
                 alert("A critical error occurred while trying to save. Please check the browser console (F12) for details.");
                 saveButton.removeAttribute('aria-busy');
                 saveButton.textContent = 'Save Changes';

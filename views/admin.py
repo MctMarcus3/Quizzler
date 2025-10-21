@@ -173,21 +173,24 @@ def edit_quiz(quiz_id):
 
     if request.method == 'POST':
         try:
-            # 1. Get the compressed, Base64-encoded data from the form.
+ 
             compressed_data_b64 = request.form.get('quizDataCompressed')
             if not compressed_data_b64:
                 raise ValueError("No compressed quiz data submitted.")
             
-            # 2. Decode from Base64 to get the raw compressed bytes.
             compressed_data = base64.b64decode(compressed_data_b64)
             
-            # 3. Decompress using the CORRECT library and function: `zlib.decompress()`.
-            #    We must also decode the resulting bytes back into a UTF-8 string.
+            # This is the single-line fix.
+            # We call zlib.decompress() with NO special arguments.
+            # This tells it to expect the standard zlib format, which is what
+            # pako sends by default. This resolves the header check error.
             uncompressed_json_bytes = zlib.decompress(compressed_data)
+            
             uncompressed_json_string = uncompressed_json_bytes.decode('utf-8')
 
-            # 4. Parse the resulting JSON string.
             form_data = json.loads(uncompressed_json_string)
+
+
             
             # 3. Reconstruct the updated_quiz dictionary directly from this parsed data.
             updated_quiz = {
