@@ -4,6 +4,7 @@ from collections import defaultdict
 import json
 import traceback
 import uuid
+import zlib
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from data_manager import get_all_quizzes, get_quiz_by_id, save_quiz
 from decorators import admin_required
@@ -180,9 +181,9 @@ def edit_quiz(quiz_id):
             # 2. Decode from Base64 to get the raw compressed bytes.
             compressed_data = base64.b64decode(compressed_data_b64)
             
-            # 3. Decompress using the CORRECT function name: `pako.inflate`.
+            # 3. Decompress using the CORRECT library and function: `zlib.decompress()`.
             #    We must also decode the resulting bytes back into a UTF-8 string.
-            uncompressed_json_bytes = pako.inflate(compressed_data)
+            uncompressed_json_bytes = zlib.decompress(compressed_data)
             uncompressed_json_string = uncompressed_json_bytes.decode('utf-8')
 
             # 4. Parse the resulting JSON string.
