@@ -162,15 +162,16 @@ def edit_quiz(quiz_id):
     if request.method == 'POST':
         try:
             # --- START OF THE DEFINITIVE FIX ---
-            # 1. Get the entire quiz data from a single form field and parse it as JSON.
+            # 1. Get the entire quiz data from the single 'quizData' form field.
             raw_data = request.form.get('quizData')
             if not raw_data:
-                raise ValueError("No quiz data submitted.")
+                raise ValueError("No quizData submitted by the form. This is a critical error.")
             
+            # 2. Parse this JSON string into a Python dictionary.
             form_data = json.loads(raw_data)
             
-            # 2. Reconstruct the updated_quiz dictionary from this parsed JSON data.
-            # The structure is already what we need.
+            # 3. Reconstruct the updated_quiz dictionary directly from this parsed data.
+            #    This is much simpler and more reliable than parsing individual fields.
             updated_quiz = {
                 'id': quiz_id,
                 'pin': quiz['pin'],
