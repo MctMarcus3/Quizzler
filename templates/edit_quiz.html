@@ -67,7 +67,7 @@
                 
                 {% if question.type in ['multiple-choice', 'multiple-select'] %}
                     <label>Options (one per line)</label>
-                <textarea class="mc-options-textarea" rows="4" data-answer='{{ question.answer|tojson|safe }}'>{{ question.options | join('\n') }}</textarea>
+                <textarea class="mc-options-textarea" rows="4" data-answer='{{ (question.answer or none)|tojson|safe }}'>{{ question.options | join('\n') }}</textarea>
                     <fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset>
                     <label>Score<input type="number" class="question-score-input" value="{{ question.score | default(1) }}" required></label>
 
@@ -81,7 +81,7 @@
                             <label>Part Text</label><textarea class="part-text-input" rows="2">{{ part.text }}</textarea>
                             {% if part.type in ['multiple-choice', 'multiple-select'] %}
                                 <label>Options (one per line)</label>
-                            <textarea class="mc-options-textarea" rows="3" data-answer='{{ part.answer|tojson|safe }}'>{{ part.options | join('\n') }}</textarea>
+                            <textarea class="mc-options-textarea" rows="3" data-answer='{{ (part.answer or none)|tojson|safe }}'>{{ part.options | join('\n') }}</textarea>
                                 <fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset>
                             {% else %}
                                 <label>Answer<input type="text" class="part-answer-input" value="{{ part.answer }}"></label>
