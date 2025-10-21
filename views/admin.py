@@ -64,7 +64,7 @@ def create_quiz():
             'id': str(uuid.uuid4()),
             'pin': str(uuid.uuid4().int)[:6],
             'name': request.form.get('quiz_name'),
-            'timer': request.form.get('quiz_timer', 300, type=int),
+            'timer': quiz_timer,
             'is_reviewable': request.form.get('is_reviewable') == 'on',
             'display_config': {
                 'mode': 'question_count',
@@ -172,18 +172,21 @@ def edit_quiz(quiz_id):
 
     if request.method == 'POST':
         try:
-            # --- START OF THE "413" FIX ---
             # 1. Get the compressed, Base64-encoded data from the form.
             compressed_data_b64 = request.form.get('quizDataCompressed')
             if not compressed_data_b64:
                 raise ValueError("No compressed quiz data submitted.")
             
-            # 2. Decode from Base64 and decompress.
+            # 2. Decode from Base64 to get the raw compressed bytes.
             compressed_data = base64.b64decode(compressed_data_b64)
-            uncompressed_json = pako.decompress(compressed_data, dict_size=0)
             
-            # 3. Parse the resulting JSON string.
-            form_data = json.loads(uncompressed_json)
+            # 3. Decompress using the CORRECT function name: `pako.inflate`.
+            #    We must also decode the resulting bytes back into a UTF-8 string.
+            uncompressed_json_bytes = pako.inflate(compressed_data)
+            uncompressed_json_string = uncompressed_json_bytes.decode('utf-8')
+
+            # 4. Parse the resulting JSON string.
+            form_data = json.loads(uncompressed_json_string)
             
             # 3. Reconstruct the updated_quiz dictionary directly from this parsed data.
             updated_quiz = {
@@ -236,158 +239,3 @@ def edit_quiz(quiz_id):
 
     # Handle GET requests by rendering the editor page.
     return render_template('edit_quiz.html', quiz=quiz)
-    quiz = get_quiz_by_id(quiz_id)
-    if not quiz:
-        flash("Quiz not found.", "danger")
-        return redirect(url_for('admin.admin_dashboard'))
-
-
-    if request.method == 'POST':
-        try:
-            # --- START OF THE DEFINITIVE FIX ---
-            # 1. Get the entire quiz data from the single 'quizData' form field.
-            raw_data = request.form.get('quizData')
-            if not raw_data:
-                raise ValueError("No quizData submitted by the form. This is a critical error.")
-            
-            # 2. Parse this JSON string into a Python dictionary.
-            form_data = json.loads(raw_data)
-            
-            # 3. Reconstruct the updated_quiz dictionary directly from this parsed data.
-            #    This is much simpler and more reliable than parsing individual fields.
-            updated_quiz = {
-                'id': quiz_id,
-                'pin': quiz['pin'],
-                'name': form_data['name'],
-                'timer': int(form_data['timer']),
-                'is_reviewable': form_data.get('is_reviewable', False),
-                'display_config': form_data['display_config'],
-                'questions': form_data['questions']
-            }
-            # --- END OF THE DEFINITIVE FIX ---
-
-            # The validation and saving logic can now proceed exactly as before,
-            # because updated_quiz is in the correct format.
-            for i, q_data in enumerate(updated_quiz['questions']):
-                error = validate_question(q_data, i + 1)
-                if error:
-                    flash(f"Validation Error: {error}", "danger")
-                    return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id, error_q=i))
-            
-            display_mode = request.form.get('display_mode', 'question_count')
-            updated_quiz['display_config'] = {
-                'mode': display_mode,
-                'parameters': {
-                    'multiple-choice': int(request.form.get('rule-multiple-choice', 0)),
-                    'short-answer': int(request.form.get('rule-short-answer', 0)),
-                    'multiple-select': int(request.form.get('rule-multiple-select', 0)),
-                    'multipart': int(request.form.get('rule-multipart', 0))
-                },
-                'target_score': int(request.form.get('target_score', 0))
-            }
-            
-            form_keys = request.form.keys()
-            
-            # --- START OF THE NEW, ROBUST PARSING LOGIC ---
-            
-            # 1. Discover all top-level question prefixes by finding their '-text' fields.
-            # This is much more reliable than using '-type'.
-            q_prefix_keys = {k.replace('-text', '') for k in form_keys if k.endswith('-text') and k.startswith('question-') and '-part-' not in k}
-            all_q_prefixes = sorted(list(q_prefix_keys))
-            
-            # --- FOR DEBUGGING: Add this print statement to your code ---
-            print(f"Discovered {len(all_q_prefixes)} questions to process: {all_q_prefixes}")
-
-            for prefix in all_q_prefixes:
-                q_type = request.form.get(f"{prefix}-type")
-                
-                if not q_type: continue # Skip if for some reason a question has no type
-                
-                # --- FOR DEBUGGING: Add this print statement ---
-                print(f"Processing question with prefix: {prefix}, type: {q_type}")
-                
-                # Each block creates a complete dictionary for 'new_q'
-                if q_type == 'multipart':
-                    new_q = {'text': request.form.get(f'{prefix}-text'), 'type': q_type, 'parts': []}
-                    part_prefix_keys = {k.replace('-text', '') for k in form_keys if k.endswith('-text') and k.startswith(f'{prefix}-part-')}
-                    all_p_prefixes = sorted(list(part_prefix_keys))
-                    
-                    for p_prefix in all_p_prefixes:
-                        part_type = request.form.get(f'{p_prefix}-type')
-                        part = {'text': request.form.get(f'{p_prefix}-text'), 'type': part_type, 'score': int(request.form.get(f'{p_prefix}-score'))}
-                        if part_type == 'multiple-select':
-                            part['answer'] = request.form.getlist(f'{p_prefix}-answer')
-                            part['options'] = [opt.strip() for opt in request.form.get(f'{p_prefix}-options', '').splitlines() if opt.strip()]
-                        elif part_type == 'multiple-choice':
-                            part['answer'] = request.form.get(f'{p_prefix}-answer')
-                            part['options'] = [opt.strip() for opt in request.form.get(f'{p_prefix}-options', '').splitlines() if opt.strip()]
-                        else: # short-answer
-                            part['answer'] = request.form.get(f'{p_prefix}-answer')
-                        new_q['parts'].append(part)
-
-                elif q_type == 'multiple-select':
-                    new_q = {
-                        'text': request.form.get(f'{prefix}-text'), 'type': q_type,
-                        'answer': request.form.getlist(f'{prefix}-answer'),
-                        'options': [opt.strip() for opt in request.form.get(f'{prefix}-options', '').splitlines() if opt.strip()],
-                        'score': int(request.form.get(f'{prefix}-score'))
-                    }
-                
-                elif q_type == 'multiple-choice':
-                    new_q = {
-                        'text': request.form.get(f'{prefix}-text'), 'type': q_type,
-                        'answer': request.form.get(f'{prefix}-answer'),
-                        'options': [opt.strip() for opt in request.form.get(f'{prefix}-options', '').splitlines() if opt.strip()],
-                        'score': int(request.form.get(f'{prefix}-score'))
-                    }
-
-                else: # short-answer
-                    new_q = {
-                        'text': request.form.get(f'{prefix}-text'), 'type': q_type,
-                        'answer': request.form.get(f'{prefix}-answer'),
-                        'score': int(request.form.get(f'{prefix}-score'))
-                    }
-                
-                updated_quiz['questions'].append(new_q)
-            
-            # --- NEW: Add a final check to prevent empty saves ---
-            if not updated_quiz['questions'] and any(k.startswith('question-') for k in form_keys):
-                 raise ValueError("Question parsing failed: No questions were added to the list, but form data was present.")
-            
-            # Validation and saving logic
-            for i, q_data in enumerate(updated_quiz['questions']):
-                error = validate_question(q_data, i + 1)
-                if error:
-                    flash(f"Validation Error: {error}", "danger")
-                    return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id, error_q=i))
-
-            available_counts = defaultdict(int)
-            total_possible_score = sum(q.get('score', sum(p.get('score', 0) for p in q.get('parts', []))) for q in updated_quiz['questions'])
-            for q in updated_quiz['questions']: available_counts[q['type']] += 1
-
-            if display_mode == 'question_count':
-                for q_type, count in updated_quiz['display_config']['parameters'].items():
-                    if count > available_counts[q_type]:
-                        flash(f"Validation Error: You requested {count} '{q_type}' questions, but only {available_counts[q_type]} are available.", "danger")
-                        return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id))
-            elif display_mode == 'total_score':
-                target = updated_quiz['display_config']['target_score']
-                if target > total_possible_score:
-                    flash(f"Validation Error: Target score of {target} is higher than the total possible score of all questions ({total_possible_score}).", "danger")
-                    return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id))
-
-            save_quiz(quiz_id, updated_quiz)
-            flash(f"Quiz '{updated_quiz['name']}' updated successfully!", "success")
-            return redirect(url_for('admin.admin_dashboard'))
-
-        except Exception as e:
-            # This is the new, detailed error handling block
-            print("--- A CRITICAL ERROR OCCURRED ---")
-            # This line will print the full, detailed error to your terminal
-            traceback.print_exc()
-            print("---------------------------------")
-            
-            flash(f"A critical error occurred. Please check the server console for the full traceback.", "danger")
-            flash(f"OS Error Details: {e}", "danger") # Also flash the specific error
-            return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id))
-        # --- END OF DEBUGGING CHANGE ---
