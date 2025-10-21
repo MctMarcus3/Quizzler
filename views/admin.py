@@ -1,6 +1,7 @@
 # views/admin.py
 from collections import defaultdict
 import json
+import traceback
 import uuid
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from data_manager import get_all_quizzes, get_quiz_by_id, save_quiz
@@ -298,8 +299,13 @@ def edit_quiz(quiz_id):
             return redirect(url_for('admin.admin_dashboard'))
 
         except Exception as e:
-            # This will now catch the ValueError and provide a useful message
-            flash(f"A critical error occurred while saving: {e}", "danger")
+            # This is the new, detailed error handling block
+            print("--- A CRITICAL ERROR OCCURRED ---")
+            # This line will print the full, detailed error to your terminal
+            traceback.print_exc()
+            print("---------------------------------")
+            
+            flash(f"A critical error occurred. Please check the server console for the full traceback.", "danger")
+            flash(f"OS Error Details: {e}", "danger") # Also flash the specific error
             return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id))
-
-    return render_template('edit_quiz.html', quiz=quiz)
+        # --- END OF DEBUGGING CHANGE ---

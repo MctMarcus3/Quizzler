@@ -38,7 +38,7 @@
       "score": 1
     },
     {
-      "text": "What is the value of the integral $$ \\int_0^1 3x^2 dx $$ ?",
+      "text": "What is the value of the integral \\( int_0^1 3x^2 dx \\) ?",
       "type": "multiple-choice",
       "options": [
         "0",
