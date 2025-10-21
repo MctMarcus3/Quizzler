@@ -107,7 +107,7 @@ def append_questions(quiz_id):
     except json.JSONDecodeError:
         flash("Invalid JSON format in the uploaded file.", "danger")
     except Exception as e:
-        flash(f"An error occurred: {e}", "danger")
+        flash(f"An error occurred while appending: {e}", "danger")
 
     return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id))
 
@@ -121,22 +121,25 @@ def validate_question(q_data, q_num):
     if not q_data.get('text', '').strip():
         return f"Question #{q_num} is missing its main text."
     
+    # Validation for types that have predefined options
     if q_type in ['multiple-choice', 'multiple-select']:
         options = q_data.get('options', [])
         if not options:
             return f"Question #{q_num} ('{q_type}') has no options defined."
         
         answers = q_data.get('answer')
-        if not answers:
-             return f"Question #{q_num} ('{q_type}') is missing a correct answer selection."
-
-        if not isinstance(answers, list):
-            answers = [answers]
+        
+        # It's NOT an error if 'answers' is missing on the first save of a new question.
+        # However, if answers ARE provided, they must be valid.
+        if answers:
+            if not isinstance(answers, list):
+                answers = [answers]
             
-        for ans in answers:
-            if ans not in options:
-                return f"Question #{q_num}: The answer '{ans}' is not listed in the provided options."
+            for ans in answers:
+                if ans not in options:
+                    return f"Question #{q_num}: The answer '{ans}' is not listed in the provided options."
     
+    # Recursive validation for multipart questions
     elif q_type == 'multipart':
         parts = q_data.get('parts', [])
         if not parts:
@@ -146,14 +149,86 @@ def validate_question(q_data, q_num):
             if part_error:
                 return part_error
     
-    elif q_type != 'multipart' and not q_data.get('answer'):
+    # Validation for types that ALWAYS require an answer
+    elif not q_data.get('answer'):
          return f"Question #{q_num} ('{q_type}') is missing an answer."
 
     return None
 
+
 @admin_bp.route('/edit/<quiz_id>', methods=['GET', 'POST'])
 @admin_required
 def edit_quiz(quiz_id):
+    """
+    Handles both displaying and processing the main quiz editor page.
+    This version correctly receives all data as a single JSON object.
+    """
+    quiz = get_quiz_by_id(quiz_id)
+    if not quiz:
+        flash("Quiz not found.", "danger")
+        return redirect(url_for('admin.admin_dashboard'))
+
+    if request.method == 'POST':
+        try:
+            # 1. Get the entire quiz data from the single 'quizData' form field.
+            raw_data = request.form.get('quizData')
+            if not raw_data:
+                raise ValueError("No quizData submitted by the form. This is a critical client-side error.")
+            
+            # 2. Parse this JSON string into a Python dictionary.
+            form_data = json.loads(raw_data)
+            
+            # 3. Reconstruct the updated_quiz dictionary directly from this parsed data.
+            updated_quiz = {
+                'id': quiz_id,
+                'pin': quiz['pin'],
+                'name': form_data['name'],
+                'timer': int(form_data['timer']),
+                'is_reviewable': form_data.get('is_reviewable', False),
+                'display_config': form_data['display_config'],
+                'questions': form_data['questions']
+            }
+
+            # 4. VALIDATE the fully constructed quiz data before saving.
+            # 4a. Per-Question Validation
+            for i, q_data in enumerate(updated_quiz['questions']):
+                error = validate_question(q_data, i + 1)
+                if error:
+                    flash(f"Validation Error: {error}", "danger")
+                    return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id, error_q=i))
+
+            # 4b. Display Configuration Validation
+            available_counts = defaultdict(int)
+            total_possible_score = sum(q.get('score', 0) if q['type'] != 'multipart' else sum(p.get('score', 0) for p in q.get('parts', [])) for q in updated_quiz['questions'])
+            for q in updated_quiz['questions']: available_counts[q['type']] += 1
+
+            display_mode = updated_quiz['display_config']['mode']
+            if display_mode == 'question_count':
+                for q_type, count in updated_quiz['display_config']['parameters'].items():
+                    if count > available_counts[q_type]:
+                        flash(f"Validation Error: You requested {count} '{q_type}' questions, but only {available_counts[q_type]} are available.", "danger")
+                        return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id))
+            elif display_mode == 'total_score':
+                target = updated_quiz['display_config']['target_score']
+                if target > total_possible_score:
+                    flash(f"Validation Error: Target score of {target} is higher than the total possible score of all questions ({total_possible_score}).", "danger")
+                    return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id))
+
+            # 5. SAVE and redirect if all validation passes.
+            save_quiz(quiz_id, updated_quiz)
+            flash(f"Quiz '{updated_quiz['name']}' updated successfully!", "success")
+            return redirect(url_for('admin.admin_dashboard'))
+
+        except Exception as e:
+            # Catch any other errors and provide helpful feedback.
+            print("--- A CRITICAL ERROR OCCURRED IN edit_quiz ---")
+            traceback.print_exc()
+            print("------------------------------------------")
+            flash(f"A critical error occurred while saving: {e}", "danger")
+            return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id))
+
+    # Handle GET requests by rendering the editor page.
+    return render_template('edit_quiz.html', quiz=quiz)
     quiz = get_quiz_by_id(quiz_id)
     if not quiz:
         flash("Quiz not found.", "danger")
