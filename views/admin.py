@@ -1,4 +1,5 @@
 # views/admin.py
+import base64
 from collections import defaultdict
 import json
 import traceback
@@ -6,6 +7,7 @@ import uuid
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from data_manager import get_all_quizzes, get_quiz_by_id, save_quiz
 from decorators import admin_required
+import pako
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
@@ -170,13 +172,18 @@ def edit_quiz(quiz_id):
 
     if request.method == 'POST':
         try:
-            # 1. Get the entire quiz data from the single 'quizData' form field.
-            raw_data = request.form.get('quizData')
-            if not raw_data:
-                raise ValueError("No quizData submitted by the form. This is a critical client-side error.")
+            # --- START OF THE "413" FIX ---
+            # 1. Get the compressed, Base64-encoded data from the form.
+            compressed_data_b64 = request.form.get('quizDataCompressed')
+            if not compressed_data_b64:
+                raise ValueError("No compressed quiz data submitted.")
             
-            # 2. Parse this JSON string into a Python dictionary.
-            form_data = json.loads(raw_data)
+            # 2. Decode from Base64 and decompress.
+            compressed_data = base64.b64decode(compressed_data_b64)
+            uncompressed_json = pako.decompress(compressed_data, dict_size=0)
+            
+            # 3. Parse the resulting JSON string.
+            form_data = json.loads(uncompressed_json)
             
             # 3. Reconstruct the updated_quiz dictionary directly from this parsed data.
             updated_quiz = {

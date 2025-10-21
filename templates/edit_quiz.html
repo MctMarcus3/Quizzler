@@ -22,8 +22,8 @@
     </details>
 
     <form method="post" id="quiz-editor-form">
-        <!-- This single hidden input will hold all quiz data as a JSON string -->
-        <input type="hidden" name="quizData" id="quiz-data-hidden-input">
+        <!-- The hidden input is now for compressed data -->
+        <input type="hidden" name="quizDataCompressed" id="quiz-data-hidden-input">
         
         <!-- All visible form fields are now just for the JavaScript to read from -->
         <div class="grid">
@@ -253,10 +253,21 @@
         // --- Event Listeners ---
         saveButton.addEventListener('click', () => {
             saveButton.setAttribute('aria-busy', 'true');
-            saveButton.textContent = 'Saving...';
+            saveButton.textContent = 'Compressing & Saving...';
             try {
+                // 1. Build the large JSON object as before.
                 const quizData = buildQuizObject();
-                hiddenInput.value = JSON.stringify(quizData, null, 2);
+                const jsonString = JSON.stringify(quizData);
+
+                // 2. Compress the JSON string using pako.
+                const compressed = pako.deflate(jsonString, { to: 'string' });
+                
+                // 3. Encode the compressed data in Base64 to ensure it's a simple string.
+                const base64Encoded = btoa(compressed);
+                
+                // 4. Put the compressed, encoded string into the hidden input.
+                hiddenInput.value = base64Encoded;
+                
                 mainForm.submit();
             } catch (error) {
                 console.error("Error building quiz object for submission:", error);

@@ -5,7 +5,7 @@ import os
 from collections import defaultdict
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash
 from datetime import datetime, timedelta
-from data_manager import get_all_quizzes, get_quiz_by_id, get_leaderboard, add_to_leaderboard
+from data_manager import get_all_quizzes, get_quiz_by_id, get_leaderboard, add_to_leaderboard, load_temp_session_data, save_temp_session_data
 from decorators import quiz_session_required
 
 student_bp = Blueprint('student', __name__)
@@ -96,7 +96,12 @@ def submit_quiz():
     if not all([quiz_id, name, start_time_str]):
         flash("Your session expired. Please start the quiz again.", "warning")
         return redirect(url_for('student.home'))
-        
+    
+    # --- "Too Big Header" FIX ---
+    review_session_id = str(uuid.uuid4())
+    save_temp_session_data(review_session_id, review_items)
+    session['review_session_id'] = review_session_id
+
     quiz = get_quiz_by_id(quiz_id)
     start_time = datetime.fromisoformat(start_time_str)
     
@@ -162,29 +167,38 @@ def leaderboard(quiz_id):
     is_reviewable = quiz.get('is_reviewable', False)
     student_name = session.get('student_name_final', '')
     review_token = session.get('review_token')
-    
-    return render_template('leaderboard.html', leaderboard=leaderboard_data, quiz_name=quiz_name, is_reviewable=is_reviewable, quiz_id=quiz_id, student_name=student_name, review_token=review_token)
+    review_session_id = session.get('review_session_id')
+    return render_template('leaderboard.html', leaderboard=leaderboard_data, quiz_name=quiz_name, is_reviewable=is_reviewable, quiz_id=quiz_id, student_name=student_name, review_token=review_token, review_session_id=review_session_id)
 
-@student_bp.route('/quiz/review/<review_token>')
-def review_quiz(review_token):
-    if 'review_token' not in session or session['review_token'] != review_token:
-        flash("Review not available or session expired.", "warning")
+@student_bp.route('/quiz/review/<quiz_id>')
+def review_quiz(quiz_id):
+    """
+    Displays the student's answers and the correct answers for a completed quiz.
+    This is the final step in the student workflow.
+    """
+    # 1. Get the unique ID for this review session from the user's cookie.
+    # We pop it to ensure it can only be used once.
+    review_session_id = session.pop('review_session_id', None)
+
+    if not review_session_id:
+        flash("Review data has expired or is no longer available. Please start a new quiz.", "warning")
+        return redirect(url_for('student.home'))
+        
+    # 2. Load the large review data from the corresponding temporary file on the server.
+    # The load_temp_session_data function also deletes the file after reading.
+    review_items = load_temp_session_data(review_session_id)
+    
+    # 3. Handle the case where the temporary file might have been deleted or expired.
+    if not review_items:
+        flash("Review data could not be found. It may have expired.", "warning")
+        return redirect(url_for('student.home'))
+    
+    # 4. Get the quiz's name for display purposes.
+    quiz = get_quiz_by_id(quiz_id)
+    if not quiz:
+        # Failsafe in case the quiz was deleted between submission and review.
+        flash("The quiz you are trying to review could not be found.", "danger")
         return redirect(url_for('student.home'))
 
-    review_filepath = os.path.join(TEMP_REVIEW_DIR, f"{review_token}.json")
-    
-    if not os.path.exists(review_filepath):
-        flash("Review data has expired or is invalid.", "warning")
-        session.pop('review_token', None)
-        return redirect(url_for('student.home'))
-
-    with open(review_filepath, 'r') as f:
-        review_payload = json.load(f)
-    
-    review_items = review_payload.get('items', [])
-    quiz_name = review_payload.get('quiz_name', 'Quiz Review')
-    
-    os.remove(review_filepath)
-    session.pop('review_token', None)
-
-    return render_template('review.html', review_items=review_items, quiz_name=quiz_name)
+    # 5. Render the review page with the loaded data.
+    return render_template('review.html', review_items=review_items, quiz_name=quiz['name'])
