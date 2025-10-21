@@ -123,3 +123,25 @@ def add_to_leaderboard(quiz_id, username, score):
             'score': score,
             'timestamp': datetime.utcnow().isoformat()
         })
+
+TEMP_SESSION_DIR = 'temp_sessions'
+
+def save_temp_session_data(session_id, data):
+    """Saves temporary data (like review data) to a server-side file."""
+    if not os.path.exists(TEMP_SESSION_DIR):
+        os.makedirs(TEMP_SESSION_DIR)
+    
+    file_path = os.path.join(TEMP_SESSION_DIR, f"{session_id}.json")
+    with open(file_path, 'w') as f:
+        json.dump(data, f)
+
+def load_temp_session_data(session_id):
+    """Loads and then deletes temporary session data from a file."""
+    file_path = os.path.join(TEMP_SESSION_DIR, f"{session_id}.json")
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as f:
+            data = json.load(f)
+        # Clean up the file after it's been read once to prevent reuse
+        os.remove(file_path)
+        return data
+    return None
