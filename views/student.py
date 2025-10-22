@@ -139,18 +139,17 @@ def submit_quiz():
             question = quiz['questions'][actual_idx]
             user_answer = user_answers.get(str(i))
             review_items.append({'question': question, 'user_answer': user_answer})
-
     add_to_leaderboard(quiz_id, name, score)
     
-    if review_items:
-        review_token = str(uuid.uuid4())
-        if not os.path.exists(TEMP_REVIEW_DIR):
-            os.makedirs(TEMP_REVIEW_DIR)
-        review_filepath = os.path.join(TEMP_REVIEW_DIR, f"{review_token}.json")
-        review_payload = {'quiz_name': quiz['name'], 'items': review_items}
-        with open(review_filepath, 'w') as f:
-            json.dump(review_payload, f)
-        session['review_token'] = review_token
+    
+    review_token = str(uuid.uuid4())
+    if not os.path.exists(TEMP_REVIEW_DIR):
+        os.makedirs(TEMP_REVIEW_DIR)
+    review_filepath = os.path.join(TEMP_REVIEW_DIR, f"{review_token}.json")
+    review_payload = {'quiz_name': quiz['name'], 'items': review_items}
+    with open(review_filepath, 'w') as f:
+        json.dump(review_payload, f)
+    session['review_token'] = review_token
 
     session['student_name_final'] = name
     session.pop('quiz_id', None)
