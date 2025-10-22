@@ -96,8 +96,7 @@ def submit_quiz():
     if not all([quiz_id, name, start_time_str]):
         flash("Your session expired. Please start the quiz again.", "warning")
         return redirect(url_for('student.home'))
-    
-
+        
     quiz = get_quiz_by_id(quiz_id)
     start_time = datetime.fromisoformat(start_time_str)
     
@@ -105,12 +104,6 @@ def submit_quiz():
     user_answers = json.loads(answers_json) if answers_json else {}
 
     score = 0
-    review_items = []
-
-    # --- "Too Big Header" FIX ---
-    review_session_id = str(uuid.uuid4())
-    save_temp_session_data(review_session_id, review_items)
-    session['review_session_id'] = review_session_id
 
     if not question_order:
         flash("The quiz had no questions to score.", "warning")
@@ -135,21 +128,24 @@ def submit_quiz():
                     else:
                         if str(user_answer).strip().lower() == str(question['answer']).lower(): score += question.get('score', 1)
 
+    # This block now correctly builds the review data
+    review_items = []
+    if question_order:
         for i, actual_idx in enumerate(question_order):
             question = quiz['questions'][actual_idx]
             user_answer = user_answers.get(str(i))
             review_items.append({'question': question, 'user_answer': user_answer})
+
+    # Save to leaderboard (this is correct)
     add_to_leaderboard(quiz_id, name, score)
     
-    
-    review_token = str(uuid.uuid4())
-    if not os.path.exists(TEMP_REVIEW_DIR):
-        os.makedirs(TEMP_REVIEW_DIR)
-    review_filepath = os.path.join(TEMP_REVIEW_DIR, f"{review_token}.json")
-    review_payload = {'quiz_name': quiz['name'], 'items': review_items}
-    with open(review_filepath, 'w') as f:
-        json.dump(review_payload, f)
-    session['review_token'] = review_token
+    # Exclusively use the correct review_session_id system
+    if review_items and quiz.get('is_reviewable'):
+        review_session_id = str(uuid.uuid4())
+        save_temp_session_data(review_session_id, review_items)
+        session['review_session_id'] = review_session_id
+
+    # DELETED: All logic related to 'review_token' has been removed.
 
     session['student_name_final'] = name
     session.pop('quiz_id', None)
@@ -159,16 +155,26 @@ def submit_quiz():
     
     return redirect(url_for('student.leaderboard', quiz_id=quiz_id))
 
+
 @student_bp.route('/leaderboard/<quiz_id>')
 def leaderboard(quiz_id):
     quiz = get_quiz_by_id(quiz_id)
     quiz_name = quiz['name'] if quiz else 'Unknown Quiz'
     leaderboard_data = get_leaderboard(quiz_id)
-    is_reviewable = quiz.get('is_reviewable', False)
+    is_reviewable = quiz.get('is_reviewable', False) if quiz else False
     student_name = session.get('student_name_final', '')
-    review_token = session.get('review_token')
+    
     review_session_id = session.get('review_session_id')
-    return render_template('leaderboard.html', leaderboard=leaderboard_data, quiz_name=quiz_name, is_reviewable=is_reviewable, quiz_id=quiz_id, student_name=student_name, review_token=review_token, review_session_id=review_session_id)
+    
+    return render_template(
+        'leaderboard.html', 
+        leaderboard=leaderboard_data, 
+        quiz_name=quiz_name, 
+        is_reviewable=is_reviewable, 
+        quiz_id=quiz_id,  # This is crucial: Pass the quiz_id to the template
+        student_name=student_name,
+        review_session_id=review_session_id # Pass the correct session ID
+    )
 
 @student_bp.route('/quiz/review/<quiz_id>')
 def review_quiz(quiz_id):

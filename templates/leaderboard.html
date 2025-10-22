@@ -25,8 +25,8 @@
             <a href="{{ url_for('student.home', name=student_name) }}" role="button" class="secondary">Take Another Quiz</a>
 
             <!-- MODIFIED: Use the review_token to build the link -->
-            {% if is_reviewable and review_token %}
-            <a href="{{ url_for('student.review_quiz', review_token=review_token) }}" role="button">Review Your Answers</a>
+            {% if is_reviewable and review_session_id %}
+            <a href="{{ url_for('student.review_quiz', quiz_id=quiz_id) }}" role="button">Review Your Answers</a>
             {% endif %}
         </div>
     </footer>
