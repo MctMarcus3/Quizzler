@@ -97,10 +97,6 @@ def submit_quiz():
         flash("Your session expired. Please start the quiz again.", "warning")
         return redirect(url_for('student.home'))
     
-    # --- "Too Big Header" FIX ---
-    review_session_id = str(uuid.uuid4())
-    save_temp_session_data(review_session_id, review_items)
-    session['review_session_id'] = review_session_id
 
     quiz = get_quiz_by_id(quiz_id)
     start_time = datetime.fromisoformat(start_time_str)
@@ -110,6 +106,11 @@ def submit_quiz():
 
     score = 0
     review_items = []
+
+    # --- "Too Big Header" FIX ---
+    review_session_id = str(uuid.uuid4())
+    save_temp_session_data(review_session_id, review_items)
+    session['review_session_id'] = review_session_id
 
     if not question_order:
         flash("The quiz had no questions to score.", "warning")
