@@ -145,3 +145,29 @@ def load_temp_session_data(session_id):
         os.remove(file_path)
         return data
     return None
+
+def delete_quiz(quiz_id):
+    """Deletes a quiz JSON file and its associated leaderboard file."""
+    quiz_deleted = False
+    leaderboard_deleted = False
+
+    # 1. Delete the quiz file
+    quiz_file_path = os.path.join(QUIZ_DIR, f"{quiz_id}.json")
+    try:
+        if os.path.exists(quiz_file_path):
+            os.remove(quiz_file_path)
+            quiz_deleted = True
+    except OSError as e:
+        print(f"Error deleting quiz file {quiz_id}: {e}")
+
+    # 2. Delete the associated leaderboard file
+    # --- FIX: The filename must match the one used by get_leaderboard and add_to_leaderboard ---
+    leaderboard_file_path = os.path.join(LEADERBOARD_DIR, f"{quiz_id}.csv")
+    try:
+        if os.path.exists(leaderboard_file_path):
+            os.remove(leaderboard_file_path)
+    except OSError as e:
+        print(f"Error deleting leaderboard file for quiz {quiz_id}: {e}")
+
+    # Return True only if the main quiz file was successfully deleted
+    return quiz_deleted

@@ -6,7 +6,7 @@ import traceback
 import uuid
 import zlib
 from flask import Blueprint, render_template, request, redirect, url_for, flash
-from data_manager import get_all_quizzes, get_quiz_by_id, save_quiz
+from data_manager import delete_quiz, get_all_quizzes, get_quiz_by_id, save_quiz
 from decorators import admin_required
 import pako
 
@@ -286,3 +286,23 @@ def edit_quiz(quiz_id):
 
     # Handle GET requests by rendering the editor page.
     return render_template('edit_quiz.html', quiz=quiz)
+
+# --- ADD THIS NEW FUNCTION ---
+@admin_bp.route('/delete/<quiz_id>', methods=['POST'])
+@admin_required
+def delete_quiz_bank(quiz_id):
+    quiz = get_quiz_by_id(quiz_id)
+    if not quiz:
+        flash("Quiz not found.", "danger")
+        return redirect(url_for('admin.admin_dashboard'))
+
+    pin_confirm = request.form.get('pin_confirm')
+    if pin_confirm == quiz.get('pin'):
+        if delete_quiz(quiz_id):
+            flash(f"Quiz '{quiz['name']}' has been permanently deleted.", "success")
+        else:
+            flash("An error occurred while trying to delete the quiz file.", "danger")
+    else:
+        flash("Incorrect PIN. Deletion cancelled.", "warning")
+
+    return redirect(url_for('admin.admin_dashboard'))

@@ -48,6 +48,7 @@
                     <td>
                         <!-- EDIT BUTTON -->
                         <a href="{{ url_for('admin.edit_quiz', quiz_id=quiz.id) }}" role="button" class="outline">Edit</a>
+                        <button class="delete-quiz-btn" data-quiz-id="{{ quiz.id }}" data-quiz-name="{{ quiz.name }}" data-quiz-pin="{{ quiz.pin }}">Delete</button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -57,4 +58,65 @@
         <p>No quizzes have been uploaded yet.</p>
         {% endif %}
     </section>
+        <!-- ADD THIS ENTIRE MODAL DIALOG AND SCRIPT BLOCK -->
+    <dialog id="delete-modal">
+        <article>
+            <header>
+                <a href="#close" aria-label="Close" class="close" data-target="delete-modal"></a>
+                <strong id="delete-modal-title">Delete Quiz?</strong>
+            </header>
+            <p id="delete-modal-prompt">To confirm, please type the PIN for this quiz.</p>
+            <form id="delete-modal-form" method="post" action="">
+                <input type="text" id="delete-modal-pin-input" name="pin_confirm" autocomplete="off" required>
+                <footer>
+                    <a href="#cancel" role="button" class="secondary" data-target="delete-modal">Cancel</a>
+                    <button type="submit" id="delete-modal-confirm-btn" disabled>Confirm & Delete</button>
+                </footer>
+            </form>
+        </article>
+    </dialog>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const modal = document.getElementById('delete-modal');
+            const modalTitle = document.getElementById('delete-modal-title');
+            const modalPrompt = document.getElementById('delete-modal-prompt');
+            const modalForm = document.getElementById('delete-modal-form');
+            const pinInput = document.getElementById('delete-modal-pin-input');
+            const confirmBtn = document.getElementById('delete-modal-confirm-btn');
+            
+            let correctPin = '';
+
+            document.querySelectorAll('.delete-quiz-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    const quizId = button.dataset.quizId;
+                    const quizName = button.dataset.quizName;
+                    correctPin = button.dataset.quizPin;
+
+                    modalTitle.textContent = `Delete Quiz: "${quizName}"?`;
+                    modalPrompt.innerHTML = `To confirm, please type the PIN: <strong>${correctPin}</strong>`;
+                    modalForm.action = `/admin/delete/${quizId}`;
+                    
+                    pinInput.value = '';
+                    confirmBtn.disabled = true;
+                    
+                    modal.showModal();
+                });
+            });
+
+            pinInput.addEventListener('input', () => {
+                if (pinInput.value === correctPin) {
+                    confirmBtn.disabled = false;
+                } else {
+                    confirmBtn.disabled = true;
+ eighty}
+            });
+
+            modal.addEventListener('click', (event) => {
+                if (event.target.dataset.target === 'delete-modal') {
+                    modal.close();
+                }
+            });
+        });
+    </script>
 {% endblock %}
