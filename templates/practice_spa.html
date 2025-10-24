@@ -1,0 +1,247 @@
+{% extends "layout.html" %}
+{% block content %}
+<main class="container">
+
+    <!-- SPA VIEW 1: SETUP (Visible by default) -->
+    <article id="setup-view">
+        <header><h2>Setup Practice: {{ quiz.name }}</h2></header>
+        <form id="setup-form">
+            {% if quiz.get('practice_mode_config', {}).get('allow_student_selection') %}
+                <p>Choose how many questions to practice. Max total: <strong>{{ quiz.practice_mode_config.max_questions_limit }}</strong></p>
+                {% set types = [('mc', 'Multiple Choice'), ('sa', 'Short Answer'), ('ms', 'Multiple-Select'), ('mp', 'Multipart')] %}
+                {% for key, name in types %}
+                    {% set type_key = name.lower().replace(' ', '-') %}
+                    {% set available = available_counts.get(type_key, 0) %}
+                    <label>{{ name }} ({{ available }} available)
+                        <input type="number" name="count_{{ type_key }}" value="{{ quiz.display_config.parameters.get(type_key, 0) if available > 0 else 0 }}" min="0" max="{{ available }}" {% if available == 0 %}disabled{% endif %}>
+                    </label>
+                {% endfor %}
+            {% else %}
+                <p>You will be given a set of practice questions selected by the instructor.</p>
+            {% endif %}
+            <button type="submit" id="start-practice-btn">Start Practice Session</button>
+            <p id="setup-error" class="error-text" style="display:none;"></p>
+        </form>
+    </article>
+
+    <!-- SPA VIEW 2: QUIZ (Hidden by default) -->
+    <article id="quiz-view" style="display:none;">
+        <hgroup>
+            <h1>Practice Question</h1>
+            <h2 id="question-counter"></h2>
+        </hgroup>
+        <div id="question-text"></div>
+        <form id="answer-form">
+            <div id="answer-inputs"></div>
+            <button type="submit">Check Answer</button>
+        </form>
+        <div id="feedback-area" style="display:none;">
+            <h4 id="feedback-text"></h4>
+            <button id="next-question-btn">Next</button>
+        </div>
+    </article>
+
+    <!-- SPA VIEW 3: SUMMARY (Hidden by default) -->
+    <article id="summary-view" style="display:none;">
+        <header><h2>Practice Complete!</h2></header>
+        <p>Great work! You have completed the practice session.</p>
+        <!-- MODIFIED: Use a group for better button layout -->
+        <div role="group">
+            <!-- ADD THIS "TRY AGAIN" BUTTON -->
+            <button id="try-again-btn">Try Again</button>
+            <a href="{{ url_for('student.home') }}" role="button" class="secondary">Back to Home</a>
+        </div>
+    </article>
+
+</main>
+<style>
+    #answer-inputs label {
+        display: flex;
+        align-items: flex-start; /* Aligns items to the top */
+        margin-bottom: 0.75rem;
+    }
+    #answer-inputs input {
+        margin-top: 0.3em; /* Vertically centers the radio/checkbox with the first line of text */
+        margin-right: 0.5em;
+    }
+    .option-content p {
+        display: inline; /* Prevents marked.js from creating block-level paragraphs */
+    }
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // --- State Management ---
+    let questions = [];
+    let currentIndex = 0;
+
+    // --- View References ---
+    const setupView = document.getElementById('setup-view');
+    const quizView = document.getElementById('quiz-view');
+    const summaryView = document.getElementById('summary-view');
+
+    // --- Setup View Elements ---
+    const setupForm = document.getElementById('setup-form');
+    const startBtn = document.getElementById('start-practice-btn');
+    const setupError = document.getElementById('setup-error');
+
+    // --- Quiz View Elements ---
+    const qCounter = document.getElementById('question-counter');
+    const qText = document.getElementById('question-text');
+    const answerForm = document.getElementById('answer-form');
+    const answerInputs = document.getElementById('answer-inputs');
+    const feedbackArea = document.getElementById('feedback-area');
+    const feedbackText = document.getElementById('feedback-text');
+    const nextBtn = document.getElementById('next-question-btn');
+
+    // --- ADD reference to the new "Try Again" button ---
+    const tryAgainBtn = document.getElementById('try-again-btn');
+    const renderWithMath = (text) => {
+        if (!text) return '';
+        const inlineMath = [];
+        const displayMath = [];
+        // Protect inline math: \(...\)
+        let protectedText = text.replace(/\\\([\s\S]*?\\\)/g, (match) => {
+            inlineMath.push(match);
+            return `%%IMATH${inlineMath.length - 1}%%`;
+        });
+        // Protect display math: $$...$$
+        protectedText = protectedText.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
+            displayMath.push(match);
+            return `%%DMATH${displayMath.length - 1}%%`;
+        });
+        let html = marked.parse(protectedText);
+        // Restore protected math expressions
+        html = html.replace(/%%IMATH(\d+)%%/g, (match, i) => inlineMath[i]);
+        html = html.replace(/<p>%%DMATH(\d+)%%<\/p>/g, (match, i) => `%%DMATH${i}%%`); // Handle block elements
+        html = html.replace(/%%DMATH(\d+)%%/g, (match, i) => displayMath[i]);
+        return html;
+    };
+
+    // --- Event Listeners ---
+    setupForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        startBtn.setAttribute('aria-busy', 'true');
+        setupError.style.display = 'none';
+
+        const formData = new FormData(setupForm);
+        const requestedCounts = {};
+        for (const [key, value] of formData.entries()) {
+            requestedCounts[key] = parseInt(value, 10);
+        }
+
+        try {
+            const response = await fetch("{{ url_for('student.practice_questions_api') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestedCounts)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'An unknown error occurred.');
+            }
+
+            questions = await response.json();
+            
+            // --- Transition to Quiz View ---
+            setupView.style.display = 'none';
+            quizView.style.display = 'block';
+            renderCurrentQuestion();
+
+        } catch (error) {
+            setupError.textContent = error.message;
+            setupError.style.display = 'block';
+            startBtn.removeAttribute('aria-busy');
+        }
+    });
+
+    answerForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const currentQuestion = questions[currentIndex];
+        const userAnswerData = new FormData(answerForm);
+        let isCorrect = false;
+
+        // --- Simplified Answer Checking (expand as needed) ---
+        if (currentQuestion.type === 'multiple-select') {
+            const userAnswers = new Set(userAnswerData.getAll('answer'));
+            const correctAnswers = new Set(currentQuestion.answer);
+            isCorrect = userAnswers.size === correctAnswers.size && [...userAnswers].every(ans => correctAnswers.has(ans));
+        } else {
+            const userAnswer = userAnswerData.get('answer');
+            isCorrect = userAnswer.trim().toLowerCase() === String(currentQuestion.answer).toLowerCase();
+        }
+
+
+        feedbackArea.style.display = 'block';
+        if (isCorrect) {
+            feedbackText.textContent = 'Correct!';
+            feedbackText.style.color = 'var(--pico-color-green-500)';
+        } else {
+            const correctAnswerHtml = Array.isArray(currentQuestion.answer) ? currentQuestion.answer.join(', ') : currentQuestion.answer;
+            // Use the new, robust render function here
+            feedbackText.innerHTML = `Incorrect. The correct answer was: <strong>${renderWithMath(String(correctAnswerHtml))}</strong>`;
+            feedbackText.style.color = 'var(--pico-color-red-500)';
+        }
+        
+        if (window.MathJax) MathJax.typeset([feedbackArea]);
+        answerForm.querySelector('button').style.display = 'none';
+        nextBtn.textContent = (currentIndex < questions.length - 1) ? 'Next Question' : 'Finish Practice';
+    });
+    
+    nextBtn.addEventListener('click', () => {
+        currentIndex++;
+        if (currentIndex < questions.length) {
+            renderCurrentQuestion();
+        } else {
+            quizView.style.display = 'none';
+            summaryView.style.display = 'block';
+        }
+    });
+
+    // --- ADD this new event listener for the "Try Again" button ---
+    tryAgainBtn.addEventListener('click', () => {
+        // Reset the application state
+        questions = [];
+        currentIndex = 0;
+
+        // Transition back to the setup view
+        summaryView.style.display = 'none';
+        setupView.style.display = 'block';
+
+        // Optional: Reset the error message and button state on the setup form
+        setupError.style.display = 'none';
+        startBtn.removeAttribute('aria-busy');
+    });
+    // --- Render Functions ---
+    function renderCurrentQuestion() {
+        feedbackArea.style.display = 'none';
+        answerForm.querySelector('button').style.display = 'block';
+
+        const question = questions[currentIndex];
+        qCounter.textContent = `Question ${currentIndex + 1} of ${questions.length}`;
+        // Use the new, robust render function here
+        qText.innerHTML = renderWithMath(question.text); 
+        answerInputs.innerHTML = ''; // Clear previous inputs
+
+        if (question.type === 'multiple-choice' || question.type === 'multiple-select') {
+            const inputType = question.type === 'multiple-choice' ? 'radio' : 'checkbox';
+            question.options.forEach(opt => {
+                const renderedOption = renderWithMath(opt);
+                // --- MODIFIED: The rendered content is now part of the label's innerHTML ---
+                answerInputs.innerHTML += `
+                    <label>
+                        <input type="${inputType}" name="answer" value="${opt}">
+                        <span class="option-content">${renderedOption}</span>
+                    </label>
+                `;
+            });
+        } else { // short-answer and multipart (simplified)
+            answerInputs.innerHTML = '<input type="text" name="answer" required>';
+        }
+        if (typeof MathJax !== 'undefined' && typeof MathJax.typeset === 'function') {
+            MathJax.typeset();
+        }
+    }
+});
+</script>
+{% endblock %}

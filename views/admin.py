@@ -67,7 +67,7 @@ def create_quiz():
             'name': request.form.get('quiz_name'),
             'timer': quiz_timer,
             'is_reviewable': request.form.get('is_reviewable') == 'on',
-            
+            'practice_pin': str(uuid.uuid4().int)[-6:],
             'display_config': {
                 'mode': 'question_count',
                 'parameters': { 'multiple-choice': 0, 'short-answer': 0, 'multiple-select': 0, 'multipart': 0 },
@@ -241,7 +241,9 @@ def edit_quiz(quiz_id):
                 'timer': int(form_data['timer']),
                 'instructions': form_data.get('instructions', ''),
                 'is_reviewable': form_data.get('is_reviewable', False),
+                'practice_mode_config': form_data.get('practice_mode_config', {'enabled': False, 'allow_student_selection': False, 'max_questions_limit': 10}),
                 'display_config': form_data['display_config'],
+                'practice_pin': form_data.get('practice_pin', quiz.get('practice_pin')),
                 'questions': form_data['questions'],
                 
             }

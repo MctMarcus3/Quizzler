@@ -3,13 +3,23 @@ import random
 import uuid
 import os
 from collections import defaultdict
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash
+from flask import Blueprint, jsonify, render_template, request, redirect, url_for, session, flash
 from datetime import datetime, timedelta
 from data_manager import get_all_quizzes, get_quiz_by_id, get_leaderboard, add_to_leaderboard, load_temp_session_data, save_temp_session_data
 from decorators import quiz_session_required
 
 student_bp = Blueprint('student', __name__)
 TEMP_REVIEW_DIR = 'temp_reviews'
+
+def find_quiz_by_any_pin(pin):
+    """Finds a quiz by matching either its main PIN or its practice PIN."""
+    pin = pin.strip()
+    for quiz in get_all_quizzes():
+        if quiz.get('pin') == pin:
+            return quiz, 'real'
+        if quiz.get('practice_mode_config', {}).get('enabled') and quiz.get('practice_pin') == pin:
+            return quiz, 'practice'
+    return None, None
 
 @student_bp.route('/')
 def home():
@@ -24,8 +34,22 @@ def start_quiz():
         flash("Please enter your name.", "warning")
         return redirect(url_for('student.home'))
 
-    quiz = next((q for q in get_all_quizzes() if q['pin'] == pin), None)
-    if quiz:
+    quiz, mode = find_quiz_by_any_pin(pin)
+
+    if not quiz:
+        flash('Invalid PIN entered.', "danger")
+        return redirect(url_for('student.home', name=name))
+
+    # Set session variables common to both modes
+    session['name'] = name
+    session['quiz_id'] = quiz['id']
+
+    if mode == 'practice':
+        # User entered a practice PIN, redirect to practice setup
+        return redirect(url_for('student.practice_setup'))
+    
+    # If we get here, mode is 'real', so proceed with the original quiz start logic
+    else:
         config = quiz.get('display_config', {})
         mode = config.get('mode', 'question_count')
         
@@ -66,9 +90,7 @@ def start_quiz():
         session['question_order'] = final_question_indices
         
         return redirect(url_for('student.instructions'))
-    else:
-        flash('Invalid PIN entered.')
-        return redirect(url_for('student.home'))
+
 
 @student_bp.route('/quiz/instructions')
 @quiz_session_required
@@ -209,3 +231,71 @@ def review_quiz(quiz_id):
 
     # 5. Render the review page with the loaded data.
     return render_template('review.html', review_items=review_items, quiz_name=quiz['name'])
+
+@student_bp.route('/practice/api/questions', methods=['POST'])
+@quiz_session_required
+def practice_questions_api():
+    quiz_id = session['quiz_id']
+    quiz = get_quiz_by_id(quiz_id)
+    
+    # This is the robust validation and selection logic from your previous request
+    practice_config = quiz.get('practice_mode_config', {})
+    allow_student_selection = practice_config.get('allow_student_selection', False)
+    max_limit = practice_config.get('max_questions_limit', 10)
+
+    available_questions = defaultdict(list)
+    for q in quiz.get('questions', []):
+        available_questions[q['type']].append(q)
+
+    requested_counts = {}
+    question_types = ['multiple-choice', 'short-answer', 'multiple-select', 'multipart']
+    
+    request_data = request.get_json()
+
+    if allow_student_selection:
+        total_requested = 0
+        for q_type in question_types:
+            count = max(0, request_data.get(f'count_{q_type}', 0))
+            requested_counts[q_type] = count
+            total_requested += count
+        
+        if total_requested > max_limit:
+            return jsonify({'error': f"You requested {total_requested} questions, but the maximum is {max_limit}."}), 400
+            
+    else: # Use default counts
+        default_params = quiz.get('display_config', {}).get('parameters', {})
+        for q_type in question_types:
+            requested_counts[q_type] = default_params.get(q_type, 0)
+
+    questions_to_practice = []
+    for q_type, count in requested_counts.items():
+        if count > len(available_questions[q_type]):
+            return jsonify({'error': f"You requested {count} '{q_type}' questions, but only {len(available_questions[q_type])} are available."}), 400
+        
+        if count > 0:
+            questions_to_practice.extend(random.sample(available_questions[q_type], count))
+    
+    if not questions_to_practice:
+        return jsonify({'error': "No questions were selected for this practice session. Please choose at least one question."}), 400
+
+    random.shuffle(questions_to_practice)
+    
+    # IMPORTANT: We return the questions as JSON, we DO NOT save to session.
+    return jsonify(questions_to_practice)
+
+@student_bp.route('/practice/setup')
+@quiz_session_required
+def practice_setup():
+    quiz = get_quiz_by_id(session['quiz_id'])
+
+    practice_config = quiz.get('practice_mode_config', {})
+    if not practice_config.get('enabled'):
+        flash("Practice mode is not enabled for this quiz.", "warning")
+        return redirect(url_for('student.home'))
+
+    available_counts = defaultdict(int)
+    for question in quiz.get('questions', []):
+        available_counts[question['type']] += 1
+    
+    # Render the new SPA template
+    return render_template('practice_spa.html', quiz=quiz, available_counts=available_counts)

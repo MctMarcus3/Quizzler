@@ -5,6 +5,9 @@ from datetime import datetime
 from werkzeug.security import generate_password_hash
 from config import USER_DATA_FILE, QUIZ_DIR, LEADERBOARD_DIR
 from config import USER_DATA_FILE, ADMIN_USERNAME, ADMIN_PASSWORD
+import uuid
+from datetime import datetime
+from werkzeug.security import generate_password_hash
 
 def load_users():
     """
@@ -33,17 +36,43 @@ def save_users(users):
 
 # --- Helper function for backward compatibility ---
 def _ensure_backward_compatibility(quiz_data):
-    """Checks for and adds missing keys like display_config to older quiz files."""
+    """
+    Checks for and adds missing keys for all new features to older quiz files.
+    This function is now upgraded to handle all recent feature additions.
+    """
+    # Check for the original display_config
     if 'display_config' not in quiz_data:
-        print(f"INFO: Upgrading old quiz format for quiz ID {quiz_data.get('id')}. Adding default display_config.")
+        print(f"INFO: Upgrading old quiz format for quiz ID {quiz_data.get('id')}. Adding default 'display_config'.")
         quiz_data['display_config'] = {
             'mode': 'question_count',
             'parameters': { 'multiple-choice': 0, 'short-answer': 0, 'multiple-select': 0, 'multipart': 0 },
             'target_score': 10
         }
+
+    # --- UPGRADE: Add default (disabled) practice mode configuration ---
+    if 'practice_mode_config' not in quiz_data:
+        print(f"INFO: Upgrading quiz ID {quiz_data.get('id')}. Adding default 'practice_mode_config'.")
+        quiz_data['practice_mode_config'] = {
+            'enabled': False,
+            'allow_student_selection': False,
+            'max_questions_limit': 10
+        }
+
+    # --- UPGRADE: Generate a practice PIN if one doesn't exist ---
+    if 'practice_pin' not in quiz_data:
+        print(f"INFO: Upgrading quiz ID {quiz_data.get('id')}. Generating new 'practice_pin'.")
+        # Generate a new random 6-digit pin for practice mode
+        quiz_data['practice_pin'] = str(uuid.uuid4().int)[-6:]
+
+    # --- UPGRADE: Add other missing fields with safe defaults ---
+    if 'is_reviewable' not in quiz_data:
+        quiz_data['is_reviewable'] = False
+    
+    if 'instructions' not in quiz_data:
+        quiz_data['instructions'] = ''
+
     return quiz_data
 
-# --- Quiz Management (MODIFIED) ---
 
 def get_all_quizzes():
     """Scans the quiz directory and returns data from all quiz JSON files."""

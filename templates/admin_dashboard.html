@@ -1,122 +1,133 @@
 {% extends "layout.html" %}
 {% block content %}
-    <h2>Admin Dashboard</h2>
+<h2>Admin Dashboard</h2>
 
-    <!-- Flash message display -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-            <article class="{{ category }}">{{ message }}</article>
-            {% endfor %}
-        {% endif %}
-    {% endwith %}
-    
-    <!-- Arrange controls in a grid for better layout -->
-    <div class="grid">
-        <article>
-            <h3>Create New Quiz</h3>
-            <p>Start a new question bank from scratch.</p>
-            <a href="{{ url_for('admin.create_quiz') }}" role="button">Create Quiz</a>
-        </article>
+<!-- Flash message display -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+{% for category, message in messages %}
+<article class="{{ category }}">{{ message }}</article>
+{% endfor %}
+{% endif %}
+{% endwith %}
 
-        <article>
-            <h3>Upload Quiz</h3>
-            <p>Upload a pre-made quiz from a JSON file.</p>
-            <form method="post" action="{{ url_for('admin.upload_quiz') }}" enctype="multipart/form-data">
-                <input type="file" name="file" accept=".json" required>
-                <button type="submit">Upload</button>
-            </form>
-        </article>
-    </div>
+<!-- Arrange controls in a grid for better layout -->
+<div class="grid">
+    <article>
+        <h3>Create New Quiz</h3>
+        <p>Start a new question bank from scratch.</p>
+        <a href="{{ url_for('admin.create_quiz') }}" role="button">Create Quiz</a>
+    </article>
 
-    <section>
-        <h3>Existing Quizzes</h3>
-        {% if quizzes %}
-        <table>
-            <thead>
-                <tr>
-                    <th>Quiz Name</th>
-                    <th>PIN</th>
-                    <th>Quiz ID</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for quiz in quizzes %}
-                <tr>
-                    <td>{{ quiz.name }}</td>
-                    <td><strong>{{ quiz.pin }}</strong></td>
-                    <td>
-                        <!-- EDIT BUTTON -->
+    <article>
+        <h3>Upload Quiz</h3>
+        <p>Upload a pre-made quiz from a JSON file.</p>
+        <form method="post" action="{{ url_for('admin.upload_quiz') }}" enctype="multipart/form-data">
+            <input type="file" name="file" accept=".json" required>
+            <button type="submit">Upload</button>
+        </form>
+    </article>
+</div>
+
+<section>
+    <h3>Existing Quizzes</h3>
+    {% if quizzes %}
+    <table>
+        <thead>
+            <tr>
+                <th>Quiz Name</th>
+                <!-- This <th> creates the new column header -->
+                <th>PINs (Quiz / Practice)</th>
+                <th>Questions</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for quiz in quizzes %}
+            <tr>
+                <td>{{ quiz.name }}</td>
+                <!-- This <td> adds the data for the new column in this row -->
+                <td>
+                    <strong>{{ quiz.pin }}</strong> /
+                    <small>{{ quiz.get('practice_pin', 'N/A') }}</small>
+                </td>
+                <td>{{ quiz.questions|length }}</td>
+                <td>
+                    <!-- MODIFIED: Replace class="grid" with role="group" for better button spacing -->
+                    <div role="group">
                         <a href="{{ url_for('admin.edit_quiz', quiz_id=quiz.id) }}" role="button" class="outline">Edit</a>
-                        <button class="delete-quiz-btn" data-quiz-id="{{ quiz.id }}" data-quiz-name="{{ quiz.name }}" data-quiz-pin="{{ quiz.pin }}">Delete</button>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <p>No quizzes have been uploaded yet.</p>
-        {% endif %}
-    </section>
-        <!-- ADD THIS ENTIRE MODAL DIALOG AND SCRIPT BLOCK -->
-    <dialog id="delete-modal">
-        <article>
-            <header>
-                <a href="#close" aria-label="Close" class="close" data-target="delete-modal"></a>
-                <strong id="delete-modal-title">Delete Quiz?</strong>
-            </header>
-            <p id="delete-modal-prompt">To confirm, please type the PIN for this quiz.</p>
-            <form id="delete-modal-form" method="post" action="">
-                <input type="text" id="delete-modal-pin-input" name="pin_confirm" autocomplete="off" required>
-                <footer>
-                    <a href="#cancel" role="button" class="secondary" data-target="delete-modal">Cancel</a>
-                    <button type="submit" id="delete-modal-confirm-btn" disabled>Confirm & Delete</button>
-                </footer>
-            </form>
-        </article>
-    </dialog>
+                        <!-- Also recommend adding a class for consistent styling -->
+                        <button class="delete-quiz-btn secondary" data-quiz-id="{{ quiz.id }}" data-quiz-name="{{ quiz.name }}" data-quiz-pin="{{ quiz.pin }}">Delete</button>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No quizzes have been uploaded yet.</p>
+    {% endif %}
+</section>
+<!-- ADD THIS ENTIRE MODAL DIALOG AND SCRIPT BLOCK -->
+<dialog id="delete-modal">
+    <article>
+        <header>
+            <a href="#close" aria-label="Close" class="close" data-target="delete-modal"></a>
+            <strong id="delete-modal-title">Delete Quiz?</strong>
+        </header>
+        <p id="delete-modal-prompt">To confirm, please type the PIN for this quiz.</p>
+        <form id="delete-modal-form" method="post" action="">
+            <input type="text" id="delete-modal-pin-input" name="pin_confirm" autocomplete="off" required>
+            <footer>
+                <a href="#cancel" role="button" class="secondary" data-target="delete-modal">Cancel</a>
+                <button type="submit" id="delete-modal-confirm-btn" disabled>Confirm & Delete</button>
+            </footer>
+        </form>
+    </article>
+</dialog>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const modal = document.getElementById('delete-modal');
-            const modalTitle = document.getElementById('delete-modal-title');
-            const modalPrompt = document.getElementById('delete-modal-prompt');
-            const modalForm = document.getElementById('delete-modal-form');
-            const pinInput = document.getElementById('delete-modal-pin-input');
-            const confirmBtn = document.getElementById('delete-modal-confirm-btn');
-            
-            let correctPin = '';
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const modal = document.getElementById('delete-modal');
+        const modalTitle = document.getElementById('delete-modal-title');
+        const modalPrompt = document.getElementById('delete-modal-prompt');
+        const modalForm = document.getElementById('delete-modal-form');
+        const pinInput = document.getElementById('delete-modal-pin-input');
+        const confirmBtn = document.getElementById('delete-modal-confirm-btn');
 
-            document.querySelectorAll('.delete-quiz-btn').forEach(button => {
-                button.addEventListener('click', () => {
-                    const quizId = button.dataset.quizId;
-                    const quizName = button.dataset.quizName;
-                    correctPin = button.dataset.quizPin;
+        let correctPin = '';
 
-                    modalTitle.textContent = `Delete Quiz: "${quizName}"?`;
-                    modalPrompt.innerHTML = `To confirm, please type the PIN: <strong>${correctPin}</strong>`;
-                    modalForm.action = `/admin/delete/${quizId}`;
-                    
-                    pinInput.value = '';
-                    confirmBtn.disabled = true;
-                    
-                    modal.showModal();
-                });
-            });
+        document.querySelectorAll('.delete-quiz-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                const quizId = button.dataset.quizId;
+                const quizName = button.dataset.quizName;
+                correctPin = button.dataset.quizPin;
 
-            pinInput.addEventListener('input', () => {
-                if (pinInput.value === correctPin) {
-                    confirmBtn.disabled = false;
-                } else {
-                    confirmBtn.disabled = true;
- eighty}
-            });
+                modalTitle.textContent = `Delete Quiz: "${quizName}"?`;
+                modalPrompt.innerHTML = `To confirm, please type the PIN: <strong>${correctPin}</strong>`;
+                modalForm.action = `/admin/delete/${quizId}`;
 
-            modal.addEventListener('click', (event) => {
-                if (event.target.dataset.target === 'delete-modal') {
-                    modal.close();
-                }
+                pinInput.value = '';
+                confirmBtn.disabled = true;
+
+                modal.showModal();
             });
         });
-    </script>
+
+        pinInput.addEventListener('input', () => {
+            if (pinInput.value === correctPin) {
+                confirmBtn.disabled = false;
+            } else {
+                confirmBtn.disabled = true;
+                eighty
+            }
+        });
+
+        modal.addEventListener('click', (event) => {
+            if (event.target.dataset.target === 'delete-modal') {
+                modal.close();
+            }
+        });
+    });
+</script>
 {% endblock %}

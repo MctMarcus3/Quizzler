@@ -82,6 +82,31 @@
                 <input type="number" name="target_score" value="{{ quiz.display_config.target_score or 10 }}" min="1">
             </label>
         </fieldset>
+
+        <fieldset>
+            <legend>Practice Mode Settings</legend>
+            <label for="practice_enabled">
+                <input type="checkbox" id="practice_enabled" name="practice_enabled" role="switch" {% if quiz.get('practice_mode_config', {}).get('enabled') %}checked{% endif %}>
+                Enable Practice Mode for this quiz
+            </label>
+            <label for="allow_student_selection">
+                <input type="checkbox" id="allow_student_selection" name="allow_student_selection" role="switch" {% if quiz.get('practice_mode_config', {}).get('allow_student_selection') %}checked{% endif %}>
+                Allow students to choose the number of practice questions
+            </label>
+            <label for="max_questions_limit">
+                Max total questions a student can select in practice
+                <input type="number" id="max_questions_limit" name="max_questions_limit" value="{{ quiz.get('practice_mode_config', {}).get('max_questions_limit', 10) }}" min="1">
+            </label>
+            <!-- ADD THIS BLOCK FOR PRACTICE PIN MANAGEMENT -->
+            <label for="practice_pin">Practice Mode PIN</label>
+            <div class="grid">
+                <input type="text" id="practice_pin" name="practice_pin" value="{{ quiz.get('practice_pin', 'N/A') }}" readonly>
+                <button type="button" id="regenerate-practice-pin-btn" class="secondary">Regenerate</button>
+            </div>
+            <!-- END OF ADDED BLOCK -->
+        </fieldset>
+        </fieldset>
+
         <button type="button" class="save-changes-btn contrast">Save Changes</button>
         <hr>
         <h3>Questions</h3>
@@ -193,6 +218,16 @@
         const hiddenInput = document.getElementById('quiz-data-hidden-input');
         const questionsContainer = document.getElementById('questions-container');
         let newQuestionCounter = 0;
+        
+        // --- ADD this event listener for the new regenerate button ---
+        const regeneratePracticePinBtn = document.getElementById('regenerate-practice-pin-btn');
+        if (regeneratePracticePinBtn) {
+            regeneratePracticePinBtn.addEventListener('click', () => {
+                // Generate a simple 6-digit random number for the new PIN
+                const newPin = String(Math.floor(100000 + Math.random() * 900000));
+                document.getElementById('practice_pin').value = newPin;
+            });
+        }
 
         // --- NEW: Live Preview Logic ---
         // --- MODIFICATION: updateAnswerGui will now create the inline previews ---
@@ -329,6 +364,12 @@
                 name: document.getElementById('quiz_name').value,
                 timer: parseInt(document.getElementById('quiz_timer').value),
                 is_reviewable: document.getElementById('is_reviewable').checked,
+                practice_pin: document.getElementById('practice_pin').value,
+                practice_mode_config: {
+                    enabled: document.getElementById('practice_enabled').checked,
+                    allow_student_selection: document.getElementById('allow_student_selection').checked,
+                    max_questions_limit: parseInt(document.getElementById('max_questions_limit').value, 10)
+                },
                 display_config: {
                     mode: document.querySelector('input[name="display_mode"]:checked').value,
                     parameters: {

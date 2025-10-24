@@ -14,13 +14,11 @@
         {% endif %}
     {% endwith %}
 
-    <form method="post" action="{{ url_for('student.start_quiz') }}">
+    <form action="{{ url_for('student.start_quiz') }}" method="post">
+        <label for="pin">Enter Quiz PIN or Practice PIN</label>
+        <input type="text" id="pin" name="pin" required>
         <label for="name">Your Name</label>
-        <input type="text" id="name" name="name" placeholder="Enter your name" value="{{ prefill_name or '' }}" required>
-
-        <label for="pin">Quiz PIN</label>
-        <input type="text" id="pin" name="pin" placeholder="Enter quiz PIN" required>
-
-        <button type="submit">Start Quiz</button>
+        <input type="text" id="name" name="name" value="{{ prefill_name }}" required>
+        <button type="submit">Start</button>
     </form>
 {% endblock %}
