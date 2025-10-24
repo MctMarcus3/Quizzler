@@ -10,6 +10,25 @@
             {% endfor %}
         {% endif %}
     {% endwith %}
+    
+    <!-- ADD THIS ENTIRE BLOCK FOR PIN MANAGEMENT -->
+    <article>
+        <div class="grid">
+            <!-- Form to manually change the PIN -->
+            <form method="post" action="{{ url_for('admin.change_pin', quiz_id=quiz.id) }}">
+                <label for="new_pin">Quiz PIN
+                    <input type="text" id="new_pin" name="new_pin" value="{{ quiz.pin }}" required>
+                </label>
+                <button type="submit">Change PIN</button>
+            </form>
+            <!-- Form to automatically regenerate a new PIN -->
+            <form method="post" action="{{ url_for('admin.regenerate_pin', quiz_id=quiz.id) }}">
+                <label for="regen_btn">Need a new PIN?</label>
+                <button type="submit" id="regen_btn" class="secondary">Regenerate New PIN</button>
+            </form>
+        </div>
+    </article>
+    <hr>
 
     <!-- Append Questions from JSON Form -->
     <details>
@@ -35,6 +54,14 @@
             Allow students to review their answers after completion?
         </label>
 
+        <!-- MODIFIED: Instructions section with live preview -->
+        <div class="form-group editor-section">
+            <label for="instructions"><strong>Instructions (Supports Markdown &amp; MathJax)</strong></label>
+            <textarea id="instructions" name="instructions" class="editor-input" rows="5">{{ quiz.get('instructions', '') }}</textarea>
+            <label>Preview:</label>
+            <article class="live-preview-container" id="instructions-preview"></article>
+        </div>
+        
         <fieldset><legend>Question Selection Mode</legend>
             <label><input type="radio" name="display_mode" value="question_count" {% if quiz.display_config.mode == 'question_count' or not quiz.display_config.mode %}checked{% endif %}> By Number of Questions</label>
             <label><input type="radio" name="display_mode" value="total_score" {% if quiz.display_config.mode == 'total_score' %}checked{% endif %}> By Target Score</label>
@@ -55,33 +82,44 @@
                 <input type="number" name="target_score" value="{{ quiz.display_config.target_score or 10 }}" min="1">
             </label>
         </fieldset>
-
+        <button type="button" class="save-changes-btn contrast">Save Changes</button>
         <hr>
         <h3>Questions</h3>
         <div id="questions-container">
             {% for question in quiz.questions %}
-            <article class="question-article" id="question-{{ loop.index0 }}">
+            <article class="question-article editor-section" id="question-{{ loop.index0 }}">
                 <input type="hidden" class="question-type-input" value="{{ question.type }}">
                 <header><b>Question <span class="q-number">{{ loop.index }}</span> (Type: {{ question.type }})</b><button type="button" class="secondary outline delete-question-btn">Delete</button></header>
-                <label>Question Text</label><textarea class="question-text-input" rows="2" required>{{ question.text }}</textarea>
+                <!-- MODIFIED: Added editor-input class -->
+                <label>Question Text</label><textarea class="question-text-input editor-input" rows="2" required>{{ question.text }}</textarea>
                 
                 {% if question.type in ['multiple-choice', 'multiple-select'] %}
+                    <!-- MODIFIED: Added editor-input class -->
                     <label>Options (one per line)</label>
-                    <textarea class="mc-options-textarea" rows="4" data-answer='{{ question.answer|default(none)|tojson|safe }}'>{{ question.options | join('\n') }}</textarea>
+                    <textarea class="mc-options-textarea editor-input" rows="4" data-answer='{{ question.answer|default(none)|tojson|safe }}'>{{ question.options | join('\n') }}</textarea>
+                    <label>Preview:</label>
+                    <article class="live-preview-container question-preview"></article>
                     <fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset>
                     <label>Score<input type="number" class="question-score-input" value="{{ question.score | default(1) }}" required></label>
-
                 {% elif question.type == 'multipart' %}
                     <div class="multipart-parts">
+                        <!-- MODIFIED: Added preview container for the main question -->
+                        <label>Preview:</label>
+                        <article class="live-preview-container question-preview"></article>
                         <h4>Sub-Questions</h4>
                         {% for part in question.parts %}
-                        <fieldset class="part-fieldset">
+                        <fieldset class="part-fieldset editor-section">
                             <header><small>Part ({{ part.type }})</small><button type="button" class="delete-part-btn">Remove</button></header>
                             <input type="hidden" class="part-type-input" value="{{ part.type }}">
-                            <label>Part Text</label><textarea class="part-text-input" rows="2">{{ part.text }}</textarea>
+                            <!-- MODIFIED: Added editor-input class -->
+                            <label>Part Text</label><textarea class="part-text-input editor-input" rows="2">{{ part.text }}</textarea>
+                            <!-- MODIFIED: Added preview container for each part -->
+                            <label>Preview:</label>
+                            <article class="live-preview-container part-preview"></article>
                             {% if part.type in ['multiple-choice', 'multiple-select'] %}
+                                <!-- MODIFIED: Added editor-input class -->
                                 <label>Options (one per line)</label>
-                            <textarea class="mc-options-textarea" rows="3" data-answer='{{ part.answer|default(none)|tojson|safe }}'>{{ part.options | join('\n') }}</textarea>
+                                <textarea class="mc-options-textarea editor-input" rows="3" data-answer='{{ part.answer|default(none)|tojson|safe }}'>{{ part.options | join('\n') }}</textarea>
                                 <fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset>
                             {% else %}
                                 <label>Answer<input type="text" class="part-answer-input" value="{{ part.answer }}"></label>
@@ -94,7 +132,11 @@
                 
                 {% else %}
                     <div class="grid"><label>Answer<input type="text" class="question-answer-input" value="{{ question.answer }}" required></label><label>Score<input type="number" class="question-score-input" value="{{ question.score | default(1) }}" required></label></div>
+                    <label>Preview:</label>
+                    <article class="live-preview-container question-preview"></article>
                 {% endif %}
+                
+
             </article>
             {% endfor %}
         </div>
@@ -103,29 +145,187 @@
             <div class="grid"><select id="new-question-type"><option value="short-answer">Short Answer</option><option value="multiple-choice">Multiple Choice</option><option value="multiple-select">Multiple-Select</option><option value="multipart">Multipart</option></select><button type="button" id="add-question-btn">Add Question</button></div>
         </fieldset>
         
-        <button type="button" id="save-changes-btn" class="contrast">Save Changes</button>
+        <button type="button" class="save-changes-btn contrast">Save Changes</button>
     </form>
     
-    <!-- --- JAVASCRIPT TEMPLATES --- -->
-    <template id="template-short-answer"><article class="question-article"><input type="hidden" class="question-type-input" value="short-answer"><header><b>Question <span class="q-number"></span> (Type: short-answer)</b> <button type="button" class="secondary outline delete-question-btn">Delete</button></header><label>Question Text</label><textarea class="question-text-input" rows="2" required></textarea><div class="grid"><label>Answer<input type="text" class="question-answer-input" required></label><label>Score<input type="number" class="question-score-input" value="1" required></label></div></article></template>
-    <template id="template-multiple-choice"><article class="question-article"><input type="hidden" class="question-type-input" value="multiple-choice"><header><b>Question <span class="q-number"></span> (Type: multiple-choice)</b> <button type="button" class="secondary outline delete-question-btn">Delete</button></header><label>Question Text</label><textarea class="question-text-input" rows="2" required></textarea><label>Options (one per line)</label><textarea class="mc-options-textarea" rows="4"></textarea><fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset><label>Score<input type="number" class="question-score-input" value="1" required></label></article></template>
-    <template id="template-multiple-select"><article class="question-article"><input type="hidden" class="question-type-input" value="multiple-select"><header><b>Question <span class="q-number"></span> (Type: multiple-select)</b> <button type="button" class="secondary outline delete-question-btn">Delete</button></header><label>Question Text</label><textarea class="question-text-input" rows="2" required></textarea><label>Options (one per line)</label><textarea class="mc-options-textarea" rows="4"></textarea><fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset><label>Score<input type="number" class="question-score-input" value="1" required></label></article></template>
-    <template id="template-multipart"><article class="question-article"><input type="hidden" class="question-type-input" value="multipart"><header><b>Question <span class="q-number"></span> (Type: multipart)</b> <button type="button" class="secondary outline delete-question-btn">Delete</button></header><label>Main Question Text</label><textarea class="question-text-input" rows="2" required></textarea><div class="multipart-parts"><h4>Sub-Questions</h4></div><footer><button type="button" class="add-part-btn" data-part-type="short-answer">Add Short Answer Part</button> <button type="button" class="add-part-btn" data-part-type="multiple-choice">Add MC Part</button> <button type="button" class="add-part-btn" data-part-type="multiple-select">Add MS Part</button></footer></article></template>
-    <template id="template-part-short-answer"><fieldset class="part-fieldset"><header><small>Part (short-answer)</small><button type="button" class="delete-part-btn">Remove</button></header><input type="hidden" class="part-type-input" value="short-answer"><label>Part Text</label><textarea class="part-text-input" rows="2"></textarea><div class="grid"><label>Answer<input type="text" class="part-answer-input"></label><label>Score<input type="number" class="part-score-input" value="1"></label></div></fieldset></template>
-    <template id="template-part-multiple-choice"><fieldset class="part-fieldset"><header><small>Part (multiple-choice)</small><button type="button" class="delete-part-btn">Remove</button></header><input type="hidden" class="part-type-input" value="multiple-choice"><label>Part Text</label><textarea class="part-text-input" rows="2"></textarea><label>Options (one per line)</label><textarea class="mc-options-textarea" rows="3"></textarea><fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset><label>Score<input type="number" class="part-score-input" value="1"></label></fieldset></template>
-    <template id="template-part-multiple-select"><fieldset class="part-fieldset"><header><small>Part (multiple-select)</small><button type="button" class="delete-part-btn">Remove</button></header><input type="hidden" class="part-type-input" value="multiple-select"><label>Part Text</label><textarea class="part-text-input" rows="2"></textarea><label>Options (one per line)</label><textarea class="mc-options-textarea" rows="3"></textarea><fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset><label>Score<input type="number" class="part-score-input" value="1"></label></fieldset></template>
+    <!-- --- JAVASCRIPT TEMPLATES (MODIFIED) --- -->
+    <template id="template-short-answer"><article class="question-article editor-section"><input type="hidden" class="question-type-input" value="short-answer"><header><b>Question <span class="q-number"></span> (Type: short-answer)</b> <button type="button" class="secondary outline delete-question-btn">Delete</button></header><label>Question Text</label><textarea class="question-text-input editor-input" rows="2" required></textarea><div class="grid"><label>Answer<input type="text" class="question-answer-input" required></label><label>Score<input type="number" class="question-score-input" value="1" required></label></div><label>Preview:</label><article class="live-preview-container question-preview"></article></article></template>
+    <template id="template-multiple-choice"><article class="question-article editor-section"><input type="hidden" class="question-type-input" value="multiple-choice"><header><b>Question <span class="q-number"></span> (Type: multiple-choice)</b> <button type="button" class="secondary outline delete-question-btn">Delete</button></header><label>Question Text</label><textarea class="question-text-input editor-input" rows="2" required></textarea><label>Options (one per line)</label><textarea class="mc-options-textarea editor-input" rows="4"></textarea><fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset><label>Score<input type="number" class="question-score-input" value="1" required></label><label>Preview:</label><article class="live-preview-container question-preview"></article></article></template>
+    <template id="template-multiple-select"><article class="question-article editor-section"><input type="hidden" class="question-type-input" value="multiple-select"><header><b>Question <span class="q-number"></span> (Type: multiple-select)</b> <button type="button" class="secondary outline delete-question-btn">Delete</button></header><label>Question Text</label><textarea class="question-text-input editor-input" rows="2" required></textarea><label>Options (one per line)</label><textarea class="mc-options-textarea editor-input" rows="4"></textarea><fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset><label>Score<input type="number" class="question-score-input" value="1" required></label><label>Preview:</label><article class="live-preview-container question-preview"></article></article></template>
+    <template id="template-multipart">
+    <article class="question-article editor-section">
+        <input type="hidden" class="question-type-input" value="multipart">
+        <header><b>Question <span class="q-number"></span> (Type: multipart)</b> <button type="button" class="secondary outline delete-question-btn">Delete</button></header>
+        <label>Main Question Text</label><textarea class="question-text-input editor-input" rows="2" required></textarea>
+        
+        <!-- MOVED PREVIEW HERE -->
+        <label>Preview:</label>
+        <article class="live-preview-container question-preview"></article>
+
+        <div class="multipart-parts"><h4>Sub-Questions</h4></div>
+        <footer><button type="button" class="add-part-btn" data-part-type="short-answer">Add Short Answer Part</button> <button type="button" class="add-part-btn" data-part-type="multiple-choice">Add MC Part</button> <button type="button" class="add-part-btn" data-part-type="multiple-select">Add MS Part</button></footer>
+    </article>
+    </template>
+    <template id="template-part-short-answer"><fieldset class="part-fieldset editor-section"><header><small>Part (short-answer)</small><button type="button" class="delete-part-btn">Remove</button></header><input type="hidden" class="part-type-input" value="short-answer"><label>Part Text</label><textarea class="part-text-input editor-input" rows="2"></textarea><div class="grid"><label>Answer<input type="text" class="part-answer-input"></label><label>Score<input type="number" class="part-score-input" value="1"></label></div><label>Preview:</label><article class="live-preview-container part-preview"></article></fieldset></template>
+    <template id="template-part-multiple-choice"><fieldset class="part-fieldset editor-section"><header><small>Part (multiple-choice)</small><button type="button" class="delete-part-btn">Remove</button></header><input type="hidden" class="part-type-input" value="multiple-choice"><label>Part Text</label><textarea class="part-text-input editor-input" rows="2"></textarea><label>Options (one per line)</label><textarea class="mc-options-textarea editor-input" rows="3"></textarea><fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset><label>Score<input type="number" class="part-score-input" value="1"></label><label>Preview:</label><article class="live-preview-container part-preview"></article></fieldset></template>
+    <template id="template-part-multiple-select"><fieldset class="part-fieldset editor-section"><header><small>Part (multiple-select)</small><button type="button" class="delete-part-btn">Remove</button></header><input type="hidden" class="part-type-input" value="multiple-select"><label>Part Text</label><textarea class="part-text-input editor-input" rows="2"></textarea><label>Options (one per line)</label><textarea class="mc-options-textarea editor-input" rows="3"></textarea><fieldset class="answer-gui-container"><legend>Correct Answer(s)</legend></fieldset><label>Score<input type="number" class="part-score-input" value="1"></label><label>Preview:</label><article class="live-preview-container part-preview"></article></fieldset></template>
+
+    <!-- ADDED: Style and script tags for rendering -->
+    <style>
+        .editor-section { padding: 1rem; border: 1px solid #ccc; border-radius: 5px; margin-bottom: 1.5rem; }
+        .live-preview-container { padding: 0.5rem 1rem; background-color: #f8f9fa; border: 1px dashed #ddd; border-radius: 5px; min-height: 40px; margin-top: 0.5rem; }
+            .option-preview-content {
+        margin-left: 0.5em; /* Adds a nice space after the radio/checkbox */
+        }
+        /* This prevents marked.js from making each option a new paragraph, keeping it inline. */
+        .option-preview-content p {
+            display: inline;
+        }
+    </style>
+    <script src="{{ url_for('static', filename='js/pako.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/marked.min.js') }}"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 
 <!-- --- JAVASCRIPT FOR DYNAMIC FUNCTIONALITY --- -->
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         const mainForm = document.getElementById('quiz-editor-form');
         const hiddenInput = document.getElementById('quiz-data-hidden-input');
-        const saveButton = document.getElementById('save-changes-btn');
         const questionsContainer = document.getElementById('questions-container');
         let newQuestionCounter = 0;
 
+        // --- NEW: Live Preview Logic ---
+        // --- MODIFICATION: updateAnswerGui will now create the inline previews ---
+        const updateAnswerGui = (optionsTextarea) => {
+            const container = optionsTextarea.closest('.question-article, .part-fieldset');
+            const guiContainer = container.querySelector('.answer-gui-container');
+            if (!guiContainer) return;
+            const questionTypeInput = container.querySelector('.question-type-input, .part-type-input');
+            if (!questionTypeInput) return;
+            const questionType = questionTypeInput.value;
+            const inputType = (questionType === 'multiple-choice') ? 'radio' : 'checkbox';
+            const uniqueName = `answer-gui-${Math.random()}`;
+            
+            let selectionToPreserve;
+            if (guiContainer.querySelectorAll('input').length > 0) {
+                selectionToPreserve = Array.from(guiContainer.querySelectorAll('input:checked')).map(el => el.value);
+            } else {
+                const savedAnswerJson = optionsTextarea.dataset.answer;
+                const savedAnswer = savedAnswerJson ? JSON.parse(savedAnswerJson) : [];
+                selectionToPreserve = Array.isArray(savedAnswer) ? savedAnswer : [savedAnswer];
+            }
+            
+            guiContainer.innerHTML = '<legend>Correct Answer(s)</legend>'; // Reset
+            const options = optionsTextarea.value.split('\n').filter(opt => opt.trim() !== '');
+
+            options.forEach(optionText => {
+                const trimmedOption = optionText.trim();
+                const label = document.createElement('label');
+                const input = document.createElement('input');
+                input.type = inputType;
+                input.name = uniqueName;
+                input.value = trimmedOption;
+                if (selectionToPreserve.includes(trimmedOption)) {
+                    input.checked = true;
+                }
+
+                // Create a span to hold the rendered content
+                const previewSpan = document.createElement('span');
+                previewSpan.className = 'option-preview-content';
+                previewSpan.innerHTML = renderWithMath(optionText); // Use new render function
+
+                label.appendChild(input);
+                label.appendChild(previewSpan); // Append the rendered HTML, not plain text
+                guiContainer.appendChild(label);
+            });
+
+            // Re-scan for new MathJax content
+            if (typeof MathJax !== 'undefined' && typeof MathJax.typeset === 'function') {
+                MathJax.typeset();
+            }
+        };
+
+        const renderWithMath = (text) => {
+            if (!text) return '';
+            const inlineMath = [];
+            const displayMath = [];
+            // Protect inline math: \(...\)
+            let protectedText = text.replace(/\\\([\s\S]*?\\\)/g, (match) => {
+                inlineMath.push(match);
+                return `%%IMATH${inlineMath.length - 1}%%`;
+            });
+            // Protect display math: $$...$$
+            protectedText = protectedText.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
+                displayMath.push(match);
+                return `%%DMATH${displayMath.length - 1}%%`;
+            });
+
+            let html = marked.parse(protectedText);
+
+            // Restore protected math expressions
+            html = html.replace(/%%IMATH(\d+)%%/g, (match, i) => inlineMath[i]);
+            html = html.replace(/%%DMATH(\d+)%%/g, (match, i) => displayMath[i]);
+            
+            return html;
+        };
+
+
+        function renderPreview(inputElement) {
+            if (!inputElement) return;
+
+            // Determine the scope of the input that changed.
+            const partScope = inputElement.closest('.part-fieldset');
+            const questionScope = inputElement.closest('.question-article');
+
+            // Case 1: The input is inside a sub-question part. This must be checked first!
+            if (partScope) {
+                const previewBox = partScope.querySelector('.part-preview');
+                if (!previewBox) return; 
+
+                const partTextInput = partScope.querySelector('.part-text-input');
+                // Render the text from the part's own textarea.
+                previewBox.innerHTML = renderWithMath(partTextInput.value);
+
+            } 
+            // Case 2: The input is in the main question area (but not a sub-part).
+            else if (questionScope) {
+                const previewBox = questionScope.querySelector('.question-preview');
+                if (!previewBox) return;
+
+                const textInput = questionScope.querySelector('.question-text-input');
+                // Render the text from the main question's textarea.
+                previewBox.innerHTML = renderWithMath(textInput.value);
+            }
+            // Case 3: The input is the main instructions textarea.
+            else if (inputElement.id === 'instructions') {
+                const previewBox = document.getElementById('instructions-preview');
+                if (previewBox) {
+                    previewBox.innerHTML = renderWithMath(inputElement.value);
+                }
+            }
+            
+            // Re-scan for MathJax content after any of the above updates.
+            if (typeof MathJax !== 'undefined' && typeof MathJax.typeset === 'function') {
+                MathJax.typeset();
+            }
+        }
+        // Use a single, efficient event listener on the form to handle all live updates
+        mainForm.addEventListener('input', (event) => {
+            if (event.target.classList.contains('editor-input')) {
+                renderPreview(event.target);
+            }
+        });
+
+        // A function to render all previews on the page at once
+        function initializeAllPreviews() {
+            document.querySelectorAll('.editor-input').forEach(renderPreview);
+        }
+        // --- End of Preview Logic ---
+
         const buildQuizObject = () => {
             const quizObj = {
+                // MODIFIED: Added instructions to the object being built
+                instructions: document.getElementById('instructions').value,
                 name: document.getElementById('quiz_name').value,
                 timer: parseInt(document.getElementById('quiz_timer').value),
                 is_reviewable: document.getElementById('is_reviewable').checked,
@@ -181,43 +381,6 @@
             return quizObj;
         };
 
-        const updateAnswerGui = (optionsTextarea) => {
-            const container = optionsTextarea.closest('.question-article, .part-fieldset');
-            const guiContainer = container.querySelector('.answer-gui-container');
-            if (!guiContainer) return;
-            const questionTypeInput = container.querySelector('.question-type-input, .part-type-input');
-            if (!questionTypeInput) return;
-            const questionType = questionTypeInput.value;
-            const inputType = (questionType === 'multiple-choice') ? 'radio' : 'checkbox';
-            const uniqueName = `answer-gui-${Math.random()}`; // Unique name for each radio group
-            
-            let selectionToPreserve;
-            if (guiContainer.querySelectorAll('input').length > 0) {
-                selectionToPreserve = Array.from(guiContainer.querySelectorAll('input:checked')).map(el => el.value);
-            } else {
-                const savedAnswerJson = optionsTextarea.dataset.answer;
-                const savedAnswer = savedAnswerJson ? JSON.parse(savedAnswerJson) : [];
-                selectionToPreserve = Array.isArray(savedAnswer) ? savedAnswer : [savedAnswer];
-            }
-            
-            guiContainer.innerHTML = '<legend>Correct Answer(s)</legend>'; // Reset but keep legend
-            const options = optionsTextarea.value.split('\n').filter(opt => opt.trim() !== '');
-            options.forEach(optionText => {
-                const trimmedOption = optionText.trim();
-                const label = document.createElement('label');
-                const input = document.createElement('input');
-                input.type = inputType;
-                input.name = uniqueName; // Use unique name for this group
-                input.value = trimmedOption;
-                if (selectionToPreserve.includes(trimmedOption)) {
-                    input.checked = true;
-                }
-                label.appendChild(input);
-                label.appendChild(document.createTextNode(' ' + optionText));
-                guiContainer.appendChild(label);
-            });
-        };
-        // --- Helper Functions ---
         const updateQuestionNumbers = () => {
             questionsContainer.querySelectorAll('.question-article').forEach((article, index) => {
                 const qNumSpan = article.querySelector('.q-number');
@@ -233,29 +396,18 @@
 
         const addPart = (multipartArticle, partType) => {
             const partTemplate = document.getElementById(`template-part-${partType}`);
-            const qIndexMatch = multipartArticle.querySelector('input[name*="question-"]').name.match(/question-([^-\s]+)/);
-            if (!qIndexMatch) return;
-            const qIndex = qIndexMatch[1];
-            
             const partContainer = multipartArticle.querySelector('.multipart-parts');
-            const newPartCounter = partContainer.querySelectorAll('.part-fieldset').length;
-            const pIndex = `new-${newPartCounter}`;
-
-            const partClone = document.createElement('div');
-            let partHtml = partTemplate.innerHTML.replace(/{q_index}/g, qIndex).replace(/{p_index}/g, pIndex);
-            partClone.innerHTML = partHtml;
-            const newPart = partClone.firstElementChild;
-            partContainer.appendChild(newPart);
-
-            newPart.querySelectorAll('.mc-options-textarea').forEach(updateAnswerGui);
+            const newPartFragment = document.importNode(partTemplate.content, true);
+            const newPartElement = newPartFragment.querySelector('.part-fieldset');
+            partContainer.appendChild(newPartFragment);
+            
+            // Re-initialize GUIs and Previews for the new part
+            newPartElement.querySelectorAll('.mc-options-textarea').forEach(updateAnswerGui);
+            newPartElement.querySelectorAll('.editor-input').forEach(renderPreview);
         };
-
-
-
-        // This is a robust, standard helper function to convert raw binary data (Uint8Array)
-        // to a Base64 string without corrupting it.
+        
         const uint8ArrayToBase64 = (uint8Array) => {
-            let CHUNK_SIZE = 0x8000; // 32k chunks
+            let CHUNK_SIZE = 0x8000;
             let index = 0;
             const length = uint8Array.length;
             let result = '';
@@ -268,31 +420,31 @@
             return btoa(result);
         };
 
-        saveButton.addEventListener('click', () => {
-            saveButton.setAttribute('aria-busy', 'true');
-            saveButton.textContent = 'Compressing & Saving...';
-            try {
-                // 1. Build the large JSON object as before.
-                const quizData = buildQuizObject();
-                const jsonString = JSON.stringify(quizData);
+        document.querySelectorAll('.save-changes-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                // Set all save buttons to the busy state
+                document.querySelectorAll('.save-changes-btn').forEach(btn => {
+                    btn.setAttribute('aria-busy', 'true');
+                    btn.textContent = 'Compressing & Saving...';
+                });
 
-                // 2. Compress the JSON string directly to raw binary (a Uint8Array).
-                //    We have REMOVED the fragile `{ to: 'string' }` option.
-                const compressed = pako.deflate(jsonString);
-                
-                // 3. Encode the raw binary data directly to Base64 using our new, robust helper function.
-                const base64Encoded = uint8ArrayToBase64(compressed);
-                
-                // 4. Put the clean, uncorrupted Base64 string into the hidden input.
-                hiddenInput.value = base64Encoded;
-                
-                mainForm.submit();
-            } catch (error) {
-                console.error("Error building or compressing quiz object for submission:", error);
-                alert("A critical error occurred while trying to save. Please check the browser console (F12) for details.");
-                saveButton.removeAttribute('aria-busy');
-                saveButton.textContent = 'Save Changes';
-            }
+                try {
+                    const quizData = buildQuizObject();
+                    const jsonString = JSON.stringify(quizData);
+                    const compressed = pako.deflate(jsonString);
+                    const base64Encoded = uint8ArrayToBase64(compressed);
+                    hiddenInput.value = base64Encoded;
+                    mainForm.submit();
+                } catch (error) {
+                    console.error("Error building or compressing quiz object for submission:", error);
+                    alert("A critical error occurred while trying to save. Please check the browser console (F12) for details.");
+                    // Reset all save buttons on error
+                    document.querySelectorAll('.save-changes-btn').forEach(btn => {
+                        btn.removeAttribute('aria-busy');
+                        btn.textContent = 'Save Changes';
+                    });
+                }
+            });
         });
 
         document.body.addEventListener('input', e => {
@@ -322,31 +474,34 @@
         document.getElementById('add-question-btn').addEventListener('click', () => {
             const questionType = document.getElementById('new-question-type').value;
             const template = document.getElementById(`template-${questionType}`);
-            const newIndex = `new-${newQuestionCounter++}`;
-            const clone = document.createElement('div');
-            clone.innerHTML = template.innerHTML.replace(/{q_index}/g, newIndex);
-            const newArticle = clone.firstElementChild;
-            questionsContainer.appendChild(newArticle);
-            newArticle.querySelectorAll('.mc-options-textarea').forEach(updateAnswerGui);
+            const newArticleFragment = document.importNode(template.content, true);
+            questionsContainer.appendChild(newArticleFragment);
+            
+            const newArticleElement = questionsContainer.lastElementChild;
+            newArticleElement.querySelectorAll('.mc-options-textarea').forEach(updateAnswerGui);
             updateQuestionNumbers();
+            
+            // MODIFIED: Initialize previews for the newly added question
+            newArticleElement.querySelectorAll('.editor-input').forEach(renderPreview);
         });
 
-        document.querySelectorAll('.mc-options-textarea').forEach(updateAnswerGui);
-
-        // The rest of the initializers
-        const urlParams = new URLSearchParams(window.location.search);
-        const errorQIndex = urlParams.get('error_q');
-        if (errorQIndex) {
+        // --- INITIALIZE EVERYTHING ON PAGE LOAD ---
+        const errorQIndex = {{ error_q | tojson if error_q is defined else 'null' }};
+        if (errorQIndex !== null) {
             const errorArticle = document.getElementById(`question-${errorQIndex}`);
             if (errorArticle) {
                 errorArticle.style.border = '2px solid var(--pico-color-red-500)';
                 errorArticle.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
         }
+        
         document.querySelectorAll('input[name="display_mode"]').forEach(radio => radio.addEventListener('change', toggleConfigView));
+        
+        document.querySelectorAll('.mc-options-textarea').forEach(updateAnswerGui);
         toggleConfigView();
         updateQuestionNumbers();
-        // --- END OF THE DEFINITIVE FIX ---
+        
+        initializeAllPreviews(); // Initial render of all previews
     });
 
 </script>

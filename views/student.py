@@ -59,8 +59,9 @@ def start_quiz():
 
         random.shuffle(final_question_indices)
         
-        session['quiz_id'] = quiz['id']
-        session['start_time'] = datetime.utcnow().isoformat()
+        session['quiz_id'] = quiz['id']    
+        if 'start_time' not in session:
+            session['start_time'] = datetime.utcnow().isoformat()
         session['name'] = name
         session['question_order'] = final_question_indices
         
@@ -152,7 +153,7 @@ def submit_quiz():
     session.pop('start_time', None)
     session.pop('name', None)
     session.pop('question_order', None)
-    
+    session.pop('start_time', None)
     return redirect(url_for('student.leaderboard', quiz_id=quiz_id))
 
 

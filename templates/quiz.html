@@ -21,191 +21,279 @@
         <input type="hidden" name="answers" id="answers-input">
     </form>
 
-    <script>
-        const quizData = {{ quiz_data|tojson|safe }};
-        const totalQuestions = quizData.length;
+<script>
+    // Assuming 'quiz.id' is available from the server context. 
+    // This creates a unique storage key for each quiz.
+    const quizId = {{ quiz.id|tojson|safe }}; 
+    const quizData = {{ quiz_data|tojson|safe }};
+    const totalQuestions = quizData.length;
+    
+    document.addEventListener('DOMContentLoaded', (event) => {
+
+        // --- DEFINE A UNIQUE KEY FOR LOCALSTORAGE ---
+        const progressKey = `quiz_progress_${quizId}`;
+
+        let currentQuestionIndex = 0;
         
-        document.addEventListener('DOMContentLoaded', (event) => {
- 
-            let currentQuestionIndex = 0;
-            const userAnswers = {};
+        // --- MODIFY THIS LINE TO LOAD SAVED ANSWERS ---
+        // It tries to load from localStorage, otherwise it starts with an empty object.
+        const userAnswers = JSON.parse(localStorage.getItem(progressKey)) || {};
 
-            const questionCounter = document.getElementById('question-counter');
-            const questionContent = document.getElementById('question-content');
-            const prevBtn = document.getElementById('prev-btn');
-            const nextBtn = document.getElementById('next-btn');
-            const submissionForm = document.getElementById('submission-form');
-            const answersInput = document.getElementById('answers-input');
-            // --- START OF THE DEFINITIVE FIX ---
-            const safeRender = (text) => {
-                if (!text) return '';
-                const math_inline = [];
-                const math_display = [];
-                let protectedText = text.replace(/\\\(.*?\\\)/g, (match) => {
-                    math_inline.push(match);
-                    return `%%INLINE_MATH_${math_inline.length - 1}%%`;
-                });
-                protectedText = protectedText.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
-                    math_display.push(match);
-                    return `%%DISPLAY_MATH_${math_display.length - 1}%%`;
-                });
-                let html = marked.parse(protectedText);
-                html = html.replace(/<p>%%DISPLAY_MATH_(\d+)%%<\/p>/g, (match, i) => `%%DISPLAY_MATH_${i}%%`);
-                html = html.replace(/%%INLINE_MATH_(\d+)%%/g, (match, i) => math_inline[i]);
-                html = html.replace(/%%DISPLAY_MATH_(\d+)%%/g, (match, i) => math_display[i]);
-                return html;
-            };
+        const questionCounter = document.getElementById('question-counter');
+        const questionContent = document.getElementById('question-content');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const submissionForm = document.getElementById('submission-form');
+        const answersInput = document.getElementById('answers-input');
+        const confirmModal = document.getElementById('confirm-submit-modal');
+        const modalText = document.getElementById('modal-unanswered-text');
+        const modalReviewBtn = document.getElementById('modal-review-btn');
+        const modalConfirmBtn = document.getElementById('modal-confirm-btn');
+        let firstUnansweredIndex = -1;
 
-            const renderQuestion = (index) => {
-                const question = quizData[index];
-                questionCounter.textContent = `Question ${index + 1} of ${totalQuestions}`;
-                
-                // Use the new safeRender function for question and part text
-                let html = `<div class="question">${safeRender(question.text)}</div><form onsubmit="return false;">`;
+        const safeRender = (text) => {
+            if (!text) return '';
+            const math_inline = [];
+            const math_display = [];
+            let protectedText = text.replace(/\\\(.*?\\\)/g, (match) => {
+                math_inline.push(match);
+                return `%%INLINE_MATH_${math_inline.length - 1}%%`;
+            });
+            protectedText = protectedText.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
+                math_display.push(match);
+                return `%%DISPLAY_MATH_${math_display.length - 1}%%`;
+            });
+            let html = marked.parse(protectedText);
+            html = html.replace(/<p>%%DISPLAY_MATH_(\d+)%%<\/p>/g, (match, i) => `%%DISPLAY_MATH_${i}%%`);
+            html = html.replace(/%%INLINE_MATH_(\d+)%%/g, (match, i) => math_inline[i]);
+            html = html.replace(/%%DISPLAY_MATH_(\d+)%%/g, (match, i) => math_display[i]);
+            return html;
+        };
+
+        const renderQuestion = (index) => {
+            const question = quizData[index];
+            questionCounter.textContent = `Question ${index + 1} of ${totalQuestions}`;
+            
+            let html = `<div class="question">${safeRender(question.text)}</div><form onsubmit="return false;">`;
+
+            if (question.type === 'multipart') {
+                question.parts.forEach((part, partIndex) => {
+                    const partAnswer = (userAnswers[index] && userAnswers[index][partIndex]) ? userAnswers[index][partIndex] : null;
+                    html += `<fieldset><div class="question part">${safeRender(part.text)}</div>`;
+                    
+                    if (part.type === 'multiple-select' || part.type === 'multiple-choice') {
+                         part.options.forEach(opt => {
+                            const inputType = part.type === 'multiple-choice' ? 'radio' : 'checkbox';
+                            const name = `answer-part-${partIndex}`;
+                            const isChecked = (part.type === 'multiple-select' ? (partAnswer && partAnswer.includes(opt)) : (partAnswer === opt)) ? 'checked' : '';
+                            html += `<label><input type="${inputType}" name="${name}" value="${opt}" ${isChecked}> ${opt}</label><br>`;
+                        });
+                    } else {
+                        const val = partAnswer || '';
+                        html += `<input type="text" name="answer-part-${partIndex}" value="${val}">`;
+                    }
+                    html += `</fieldset>`;
+                });
+            } else if (question.type === 'multiple-select' || question.type === 'multiple-choice') {
+                const answer = userAnswers[index];
+                const inputType = question.type === 'multiple-choice' ? 'radio' : 'checkbox';
+                question.options.forEach(opt => {
+                    const isChecked = (question.type === 'multiple-select' ? (answer && answer.includes(opt)) : (answer === opt)) ? 'checked' : '';
+                    html += `<label><input type="${inputType}" name="answer" value="${opt}" ${isChecked}> ${opt}</label><br>`;
+                });
+            } else {
+                const answer = userAnswers[index] || '';
+                html += `<input type="text" name="answer" value="${answer}">`;
+            }
+
+            html += `</form>`;
+            questionContent.innerHTML = html;
+            if (typeof MathJax !== 'undefined' && typeof MathJax.typeset === 'function') {
+                MathJax.typeset();
+            }
+
+            prevBtn.style.visibility = (index === 0) ? 'hidden' : 'visible';
+            nextBtn.textContent = (index === totalQuestions - 1) ? 'Finish Quiz' : 'Next';
+        };
+
+        const saveCurrentAnswer = () => {
+            const question = quizData[currentQuestionIndex];
+            if (!question) return;
+            const form = questionContent.querySelector('form');
+            if (!form) return;
+
+            if (question.type === 'multiple-select') {
+                userAnswers[currentQuestionIndex] = Array.from(form.querySelectorAll('input[name="answer"]:checked')).map(el => el.value);
+            } else if (question.type === 'multipart') {
+                const partsAnswers = [];
+                question.parts.forEach((part, index) => {
+                    if (part.type === 'multiple-select') {
+                        partsAnswers.push(Array.from(form.querySelectorAll(`input[name="answer-part-${index}"]:checked`)).map(el => el.value));
+                    } else {
+                        const input = form.querySelector(`input[name="answer-part-${index}"]`);
+                        partsAnswers.push(input ? input.value : null);
+                    }
+                });
+                userAnswers[currentQuestionIndex] = partsAnswers;
+            } else {
+                const input = form.querySelector('input[name="answer"]:checked, input[type="text"][name="answer"]');
+                userAnswers[currentQuestionIndex] = input ? input.value : null;
+            }
+        };
+
+        // --- ADDED THIS FUNCTION TO SAVE PROGRESS ---
+        const saveProgress = () => {
+            saveCurrentAnswer();
+            localStorage.setItem(progressKey, JSON.stringify(userAnswers));
+        };
+        
+        const checkCompletion = () => {
+            let unansweredCount = 0;
+            let firstIndex = -1; // Default to -1 (not found)
+
+            for (let i = 0; i < totalQuestions; i++) {
+                const question = quizData[i]; // Get the full question data
+                const answer = userAnswers[i];
+                let isAnswered = false;
 
                 if (question.type === 'multipart') {
-                    question.parts.forEach((part, partIndex) => {
-                        const partAnswer = (userAnswers[index] && userAnswers[index][partIndex]) ? userAnswers[index][partIndex] : null;
-                        html += `<fieldset><div class="question part">${safeRender(part.text)}</div>`; // Use safeRender here
-                        
-                        if (part.type === 'multiple-select' || part.type === 'multiple-choice') {
-                             part.options.forEach(opt => {
-                                const inputType = part.type === 'multiple-choice' ? 'radio' : 'checkbox';
-                                const name = `answer-part-${partIndex}`;
-                                const isChecked = (part.type === 'multiple-select' ? (partAnswer && partAnswer.includes(opt)) : (partAnswer === opt)) ? 'checked' : '';
-                                // Options are NOT parsed by Markdown, so no safeRender needed
-                                html += `<label><input type="${inputType}" name="${name}" value="${opt}" ${isChecked}> ${opt}</label><br>`;
-                            });
-                        } else {
-                            const val = partAnswer || '';
-                            html += `<input type="text" name="answer-part-${partIndex}" value="${val}">`;
-                        }
-                        html += `</fieldset>`;
-                    });
-                } else if (question.type === 'multiple-select' || question.type === 'multiple-choice') {
-                    const answer = userAnswers[index];
-                    const inputType = question.type === 'multiple-choice' ? 'radio' : 'checkbox';
-                    question.options.forEach(opt => {
-                        const isChecked = (question.type === 'multiple-select' ? (answer && answer.includes(opt)) : (answer === opt)) ? 'checked' : '';
-                        html += `<label><input type="${inputType}" name="answer" value="${opt}" ${isChecked}> ${opt}</label><br>`;
-                    });
-                } else {
-                    const answer = userAnswers[index] || '';
-                    html += `<input type="text" name="answer" value="${answer}">`;
-                }
-
-                html += `</form>`;
-                questionContent.innerHTML = html;
-                if (typeof MathJax !== 'undefined' && typeof MathJax.typeset === 'function') {
-                    MathJax.typeset();
-                }
-
-                prevBtn.style.visibility = (index === 0) ? 'hidden' : 'visible';
-                nextBtn.textContent = (index === totalQuestions - 1) ? 'Finish Quiz' : 'Next';
-            };
-
-            const saveCurrentAnswer = () => {
-                const question = quizData[currentQuestionIndex];
-                if (!question) return;
-                const form = questionContent.querySelector('form');
-                if (!form) return;
-
-                if (question.type === 'multiple-select') {
-                    userAnswers[currentQuestionIndex] = Array.from(form.querySelectorAll('input[name="answer"]:checked')).map(el => el.value);
-                } else if (question.type === 'multipart') {
-                    const partsAnswers = [];
-                    question.parts.forEach((part, index) => {
-                        if (part.type === 'multiple-select') {
-                            partsAnswers.push(Array.from(form.querySelectorAll(`input[name="answer-part-${index}"]:checked`)).map(el => el.value));
-                        } else {
-                            const input = form.querySelector(`input[name="answer-part-${index}"]`);
-                            partsAnswers.push(input ? input.value : null);
-                        }
-                    });
-                    userAnswers[currentQuestionIndex] = partsAnswers;
-                } else {
-                    const input = form.querySelector('input[name="answer"]:checked, input[type="text"][name="answer"]');
-                    userAnswers[currentQuestionIndex] = input ? input.value : null;
-                }
-            };
-            
-            const checkCompletion = () => {
-                let unansweredCount = 0;
-                for (let i = 0; i < totalQuestions; i++) {
-                    const answer = userAnswers[i];
-                    let isAnswered = false;
-                    if (Array.isArray(answer)) {
-                        // For multiple-select and multipart, check if the array is not empty
-                        // and for multipart, that sub-arrays are not all empty/null.
-                        isAnswered = answer.length > 0 && answer.some(part => (Array.isArray(part) ? part.length > 0 : part));
-                    } else if (answer) {
-                        // For short-answer and multiple-choice
-                        isAnswered = true;
-                    }
-                    if (!isAnswered) {
-                        unansweredCount++;
-                    }
-                }
-                return unansweredCount;
-            };
-
-            // This function handles the final submission logic.
-            const finishQuiz = () => {
-                // Final answer save before submitting
-                saveCurrentAnswer();
-
-                const unanswered = checkCompletion();
-
-                if (unanswered > 0) {
-                    const confirmation = confirm(`You have ${unanswered} unanswered question(s). Are you sure you want to submit?`);
-                    if (!confirmation) {
-                        return; // Stop the submission process
-                    }
-                }
-                
-                // If all answered, or if user confirmed, proceed with submission.
-                answersInput.value = JSON.stringify(userAnswers);
-                submissionForm.submit();
-            };
-
-            nextBtn.addEventListener('click', () => {
-                if (currentQuestionIndex < totalQuestions - 1) {
-                    saveCurrentAnswer();
-                    currentQuestionIndex++;
-                    renderQuestion(currentQuestionIndex);
-                } else {
-                    // On the last question, the "Next" button becomes "Finish Quiz"
-                    // and now calls our new completion check function.
-                    finishQuiz();
-                }
-            });
-
-            prevBtn.addEventListener('click', () => {
-                saveCurrentAnswer();
-                if (currentQuestionIndex > 0) {
-                    currentQuestionIndex--;
-                    renderQuestion(currentQuestionIndex);
-                }
-            });
-
-            renderQuestion(0);
-
-            const timerDisplay = document.getElementById('timer');
-            const quizTimer = {{ quiz.timer }};
-            if (timerDisplay && quizTimer > 0) {
-                const startTime = new Date("{{ session.start_time }}Z");
-                const timerInterval = setInterval(() => {
-                    const elapsed = Math.floor((new Date() - startTime) / 1000);
-                    const timeLeft = quizTimer - elapsed;
-                    if (timeLeft <= 0) {
-                        clearInterval(timerInterval);
-                        answersInput.value = JSON.stringify(userAnswers);
-                        submissionForm.submit();
+                    // A multipart question is answered only if EVERY part is answered.
+                    // First, check if an answer array exists and has the correct number of parts.
+                    if (answer && Array.isArray(answer) && answer.length === question.parts.length) {
+                        isAnswered = answer.every(partAnswer => {
+                            // For a multiple-select part, the answer array must not be empty.
+                            if (Array.isArray(partAnswer)) {
+                                return partAnswer.length > 0;
+                            }
+                            // For short-answer or multiple-choice, the answer must be a non-empty value.
+                            return partAnswer && String(partAnswer).trim() !== '';
+                        });
                     } else {
-                        timerDisplay.querySelector('span').textContent = timeLeft;
+                        isAnswered = false; // The answer array is incomplete or doesn't exist.
                     }
-                }, 1000);
+                } else if (question.type === 'multiple-select') {
+                    // A standard multiple-select is answered if its answer array is not empty.
+                    isAnswered = answer && Array.isArray(answer) && answer.length > 0;
+                } else {
+                    // For standard short-answer or multiple-choice, the answer must be a non-empty value.
+                    isAnswered = answer && String(answer).trim() !== '';
+                }
+
+                if (!isAnswered) {
+                    unansweredCount++;
+                    if (firstIndex === -1) {
+                        firstIndex = i; // Record the index of the first one found
+                    }
+                }
+            }
+            return { count: unansweredCount, firstUnanswered: firstIndex };
+        };
+
+
+        const proceedWithSubmission = () => {
+            localStorage.removeItem(progressKey); // Clear saved progress
+            answersInput.value = JSON.stringify(userAnswers);
+            submissionForm.submit();
+        };
+
+        const finishQuiz = () => {
+            saveCurrentAnswer();
+            const completionStatus = checkCompletion();
+            const unanswered = completionStatus.count;
+            firstUnansweredIndex = completionStatus.firstUnanswered; // Store the index
+
+            if (unanswered > 0) {
+                modalText.textContent = `You have ${unanswered} unanswered question(s). Are you sure you want to submit?`;
+                confirmModal.showModal();
+            } else {
+                proceedWithSubmission();
+            }
+        };
+
+        // --- MODIFIED: Add a listener for the new review button and remove the old one ---
+        modalReviewBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            if (firstUnansweredIndex !== -1) {
+                confirmModal.close();
+                // Jump to the first unanswered question
+                currentQuestionIndex = firstUnansweredIndex;
+                renderQuestion(currentQuestionIndex);
             }
         });
-    </script>
+
+        modalConfirmBtn.addEventListener('click', (event) => {
+            event.preventDefault(); // Prevent default link behavior
+            confirmModal.close();
+            proceedWithSubmission();
+        });
+
+        // This listener now correctly handles ONLY the 'X' close button
+        // since the review button no longer has a 'data-target' attribute.
+        confirmModal.addEventListener('click', (event) => {
+            if (event.target.dataset.target === 'confirm-submit-modal') {
+                confirmModal.close();
+            }
+        });
+
+        nextBtn.addEventListener('click', () => {
+            if (currentQuestionIndex < totalQuestions - 1) {
+                saveCurrentAnswer();
+                currentQuestionIndex++;
+                renderQuestion(currentQuestionIndex);
+            } else {
+                finishQuiz();
+            }
+        });
+
+        prevBtn.addEventListener('click', () => {
+            saveCurrentAnswer();
+            if (currentQuestionIndex > 0) {
+                currentQuestionIndex--;
+                renderQuestion(currentQuestionIndex);
+            }
+        });
+
+        // --- ADDED THIS EVENT LISTENER TO SAVE ON ANY CHANGE ---
+        questionContent.addEventListener('change', saveProgress);
+
+        renderQuestion(0);
+
+        const timerDisplay = document.getElementById('timer');
+        const quizTimer = {{ quiz.timer }};
+        if (timerDisplay && quizTimer > 0) {
+            const startTime = new Date("{{ session.start_time }}Z");
+            const timerInterval = setInterval(() => {
+                const elapsed = Math.floor((new Date() - startTime) / 1000);
+                const timeLeft = quizTimer - elapsed;
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    
+                    // --- ADDED THIS LINE FOR TIMER SUBMISSION ---
+                    localStorage.removeItem(progressKey);
+
+                    answersInput.value = JSON.stringify(userAnswers);
+                    submissionForm.submit();
+                } else {
+                    timerDisplay.querySelector('span').textContent = timeLeft;
+                }
+            }, 1000);
+        }
+    });
+</script>
+<!-- ADD THIS MODAL DIALOG STRUCTURE -->
+<dialog id="confirm-submit-modal">
+    <article>
+        <header>
+            <a href="#close" aria-label="Close" class="close" data-target="confirm-submit-modal"></a>
+            <strong>Submit Quiz?</strong>
+        </header>
+        <p id="modal-unanswered-text">
+            <!-- This text will be updated by the script -->
+        </p>
+        <footer>
+            <a href="#review" role="button" class="secondary" id="modal-review-btn">Go Back & Review</a>
+            <a href="#confirm" role="button" id="modal-confirm-btn">Submit Anyway</a>
+        </footer>
+    </article>
+</dialog>
 {% endblock %}

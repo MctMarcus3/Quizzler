@@ -16,9 +16,26 @@
                 {% endif %}
             </li>
         </ul>
-        <p>Once you begin, the timer (if applicable) will start. Do not refresh the page during the quiz.</p>
+        <div id="instructions-content">
+            <p>Please answer all questions to the best of your ability.</p>
+        </div>     
         <footer>
             <a href="{{ url_for('student.take_quiz', q_num=1) }}" role="button" class="contrast">Begin Quiz</a>
         </footer>
     </article>
+    <!-- Include the marked.js library -->
+    <script src="{{ url_for('static', filename='js/marked.min.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Get the raw instruction text from the quiz data passed by Flask
+            const rawInstructions = {{ quiz.get('instructions', '') | tojson }};
+
+            // Only render if there are instructions
+            if (rawInstructions) {
+                const instructionsContainer = document.getElementById('instructions-content');
+                // Parse the Markdown and set it as the container's HTML content
+                instructionsContainer.innerHTML = marked.parse(rawInstructions);
+            }
+        });
+    </script>
 {% endblock %}

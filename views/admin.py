@@ -62,11 +62,12 @@ def create_quiz():
         # Create a basic quiz structure
         quiz_id = str(uuid.uuid4())
         new_quiz = {
-            'id': str(uuid.uuid4()),
+            'id': quiz_id, 
             'pin': str(uuid.uuid4().int)[:6],
             'name': request.form.get('quiz_name'),
             'timer': quiz_timer,
             'is_reviewable': request.form.get('is_reviewable') == 'on',
+            
             'display_config': {
                 'mode': 'question_count',
                 'parameters': { 'multiple-choice': 0, 'short-answer': 0, 'multiple-select': 0, 'multipart': 0 },
@@ -75,12 +76,52 @@ def create_quiz():
             'questions': []
         }
         
-        save_quiz(quiz_id, new_quiz)
+        save_quiz(quiz_id, new_quiz) # This now saves a file where the filename and internal ID match.
         flash(f"Quiz '{quiz_name}' created. You can now add questions.", "success")
         return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id))
 
     return render_template('create_quiz.html')
 
+# --- ADD THIS NEW FUNCTION ---
+@admin_bp.route('/change_pin/<quiz_id>', methods=['POST'])
+@admin_required
+def change_pin(quiz_id):
+    quiz = get_quiz_by_id(quiz_id)
+    if not quiz:
+        flash("Quiz not found.", "danger")
+        return redirect(url_for('admin.admin_dashboard'))
+
+    new_pin = request.form.get('new_pin', '').strip()
+    if not new_pin:
+        flash("New PIN cannot be empty.", "warning")
+        return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id))
+
+    # Validate if the new PIN is already in use
+    all_quizzes = get_all_quizzes()
+    for q in all_quizzes:
+        if q['id'] != quiz_id and q.get('pin') == new_pin:
+            flash(f"PIN '{new_pin}' is already in use by another quiz. Please choose a different one.", "danger")
+            return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id))
+
+    quiz['pin'] = new_pin
+    save_quiz(quiz_id, quiz)
+    flash("Quiz PIN updated successfully.", "success")
+    return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id))
+
+
+# --- AND ADD THIS NEW FUNCTION ---
+@admin_bp.route('/regenerate_pin/<quiz_id>', methods=['POST'])
+@admin_required
+def regenerate_pin(quiz_id):
+    quiz = get_quiz_by_id(quiz_id)
+    if not quiz:
+        flash("Quiz not found.", "danger")
+        return redirect(url_for('admin.admin_dashboard'))
+
+    quiz['pin'] = str(uuid.uuid4().int)[:6]
+    save_quiz(quiz_id, quiz)
+    flash(f"New PIN '{quiz['pin']}' generated successfully.", "success")
+    return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id))
 
 @admin_bp.route('/append/<quiz_id>', methods=['POST'])
 @admin_required
@@ -198,9 +239,11 @@ def edit_quiz(quiz_id):
                 'pin': quiz['pin'],
                 'name': form_data['name'],
                 'timer': int(form_data['timer']),
+                'instructions': form_data.get('instructions', ''),
                 'is_reviewable': form_data.get('is_reviewable', False),
                 'display_config': form_data['display_config'],
-                'questions': form_data['questions']
+                'questions': form_data['questions'],
+                
             }
 
             # 4. VALIDATE the fully constructed quiz data before saving.
@@ -209,7 +252,7 @@ def edit_quiz(quiz_id):
                 error = validate_question(q_data, i + 1)
                 if error:
                     flash(f"Validation Error: {error}", "danger")
-                    return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id, error_q=i))
+                    return render_template('edit_quiz.html', quiz=updated_quiz, error_q=i)
 
             # 4b. Display Configuration Validation
             available_counts = defaultdict(int)
@@ -221,12 +264,12 @@ def edit_quiz(quiz_id):
                 for q_type, count in updated_quiz['display_config']['parameters'].items():
                     if count > available_counts[q_type]:
                         flash(f"Validation Error: You requested {count} '{q_type}' questions, but only {available_counts[q_type]} are available.", "danger")
-                        return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id))
+                        return render_template('edit_quiz.html', quiz=updated_quiz)
             elif display_mode == 'total_score':
                 target = updated_quiz['display_config']['target_score']
                 if target > total_possible_score:
                     flash(f"Validation Error: Target score of {target} is higher than the total possible score of all questions ({total_possible_score}).", "danger")
-                    return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id))
+                    return render_template('edit_quiz.html', quiz=updated_quiz)
 
             # 5. SAVE and redirect if all validation passes.
             save_quiz(quiz_id, updated_quiz)
@@ -239,7 +282,7 @@ def edit_quiz(quiz_id):
             traceback.print_exc()
             print("------------------------------------------")
             flash(f"A critical error occurred while saving: {e}", "danger")
-            return redirect(url_for('admin.edit_quiz', quiz_id=quiz_id))
+            return render_template('edit_quiz.html', quiz=quiz)
 
     # Handle GET requests by rendering the editor page.
     return render_template('edit_quiz.html', quiz=quiz)

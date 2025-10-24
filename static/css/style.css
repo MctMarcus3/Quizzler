@@ -3,3 +3,18 @@
     font-weight: bold;
     margin-bottom: 1em;
 }
+
+.editor-section, .question-editor {
+    padding: 1rem;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    margin-bottom: 1.5rem;
+}
+
+.live-preview-container {
+    padding: 0.5rem 1rem;
+    background-color: #f8f9fa;
+    border: 1px dashed #ddd;
+    border-radius: 5px;
+    min-height: 40px;
+}
