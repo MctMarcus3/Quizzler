@@ -606,25 +606,85 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }, 100); // A short delay is enough
         }
-
+        // Handle delete question clicks
         if (e.target.matches('.delete-question-btn')) {
             e.preventDefault();
             const article = e.target.closest('.question-article');
             const index = parseInt(article.dataset.index, 10);
             if (confirm('Are you sure you want to delete this question?')) {
                 allQuestions.splice(index, 1);
-                handleSearch(); // Re-filter and re-render
+                handleSearch(); // Re-filter and re-render the current view
             }
         }
+
+        // Handle Add Question button
+        if (e.target.matches('#add-question-btn')) {
+            e.preventDefault();
+            
+            const questionType = document.getElementById('new-question-type').value;
+            const newQuestion = { type: questionType, text: 'New Question Text', score: 1 };
+
+            if (questionType === 'multiple-choice' || questionType === 'multiple-select') {
+                newQuestion.options = ['Option 1', 'Option 2'];
+                newQuestion.answer = null;
+            } else if (questionType === 'short-answer') {
+                newQuestion.answer = '';
+            } else if (questionType === 'multipart') {
+                newQuestion.parts = [];
+            }
+
+            allQuestions.push(newQuestion);
+            handleSearch(); // Refresh filtered list
+            
+            const lastPage = Math.ceil(filteredQuestions.length / QUESTIONS_PER_PAGE) || 1;
+            renderPage(lastPage);
+
+            setTimeout(() => {
+                const lastQuestionElement = questionsContainer.lastElementChild;
+                if(lastQuestionElement) {
+                    lastQuestionElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    const textInput = lastQuestionElement.querySelector('.question-text-input');
+                    if (textInput) textInput.select();
+                }
+            }, 100);
+        }
+        
         if (e.target.matches('.delete-part-btn')) {
             e.preventDefault();
-            if (confirm('Are you sure you want to delete this part?')) {
-                e.target.closest('.part-fieldset').remove();
+            const article = e.target.closest('.question-article');
+            const index = parseInt(article.dataset.index, 10);
+            
+            const partFieldset = e.target.closest('.part-fieldset');
+            const partsContainer = article.querySelector('.multipart-parts');
+            const allParts = Array.from(partsContainer.querySelectorAll('.part-fieldset'));
+            const partIndex = allParts.indexOf(partFieldset);
+
+            if (confirm('Are you sure you want to delete this sub-question part?')) {
+                if (allQuestions[index] && allQuestions[index].parts && partIndex > -1) {
+                    allQuestions[index].parts.splice(partIndex, 1);
+                    renderPage(currentPage); // Re-render the page to reflect the deletion
+                }
             }
         }
+
+        // Handle Add Part button for multipart questions
         if (e.target.matches('.add-part-btn')) {
             e.preventDefault();
-            addPart(e.target.closest('.question-article'), e.target.dataset.partType);
+            const article = e.target.closest('.question-article');
+            const index = parseInt(article.dataset.index, 10);
+            const partType = e.target.dataset.partType;
+            const newPart = { type: partType, text: 'New Part Text', score: 1 };
+
+            if (partType !== 'short-answer') {
+                newPart.options = ['Option 1']; newPart.answer = null;
+            } else {
+                newPart.answer = '';
+            }
+            
+            if (allQuestions[index] && allQuestions[index].parts) {
+                allQuestions[index].parts.push(newPart);
+                renderPage(currentPage); // Re-render to show the new part
+            }
         }
     });
 
