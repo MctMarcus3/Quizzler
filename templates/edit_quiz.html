@@ -134,7 +134,7 @@
             <!-- ADD THIS BLOCK FOR PRACTICE PIN MANAGEMENT -->
             <label for="practice_pin">Practice Mode PIN</label>
             <div class="grid">
-                <input type="text" id="practice_pin" name="practice_pin" value="{{ quiz.get('practice_pin', 'N/A') }}" readonly>
+                <input type="text" id="practice_pin" name="practice_pin" value="{{ quiz.get('practice_pin', 'N/A') }}">
                 <button type="button" id="regenerate-practice-pin-btn" class="secondary">Regenerate</button>
             </div>
             <!-- END OF ADDED BLOCK -->
@@ -684,6 +684,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (allQuestions[index] && allQuestions[index].parts) {
                 allQuestions[index].parts.push(newPart);
                 renderPage(currentPage); // Re-render to show the new part
+            }
+        }
+        
+        if (e.target.matches('#regenerate-practice-pin-btn')) {
+            e.preventDefault();
+            const practicePinInput = document.getElementById('practice_pin');
+            if (practicePinInput) {
+                // Generate a new 6-digit PIN
+                const newPin = String(Math.floor(100000 + Math.random() * 900000));
+                practicePinInput.value = newPin;
             }
         }
     });
