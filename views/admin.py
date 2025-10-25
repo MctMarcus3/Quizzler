@@ -248,15 +248,19 @@ def edit_quiz(quiz_id):
                 
             }
 
-            # 4. VALIDATE the fully constructed quiz data before saving.
-            # 4a. Per-Question Validation
+            # --- MODIFIED VALIDATION LOGIC ---
+            validation_messages = []
+            error_indices = []
+
+            # Per-Question Validation
             for i, q_data in enumerate(updated_quiz['questions']):
                 error = validate_question(q_data, i + 1)
                 if error:
-                    flash(f"Validation Error: {error}", "danger")
-                    return render_template('edit_quiz.html', quiz=updated_quiz, error_q=i)
+                    # Create a message object with text and the question's index
+                    validation_messages.append({'text': error, 'index': i})
+                    error_indices.append(i)
 
-            # 4b. Display Configuration Validation
+            # Display Configuration Validation
             available_counts = defaultdict(int)
             total_possible_score = sum(q.get('score', 0) if q['type'] != 'multipart' else sum(p.get('score', 0) for p in q.get('parts', [])) for q in updated_quiz['questions'])
             for q in updated_quiz['questions']: available_counts[q['type']] += 1
@@ -265,15 +269,17 @@ def edit_quiz(quiz_id):
             if display_mode == 'question_count':
                 for q_type, count in updated_quiz['display_config']['parameters'].items():
                     if count > available_counts[q_type]:
-                        flash(f"Validation Error: You requested {count} '{q_type}' questions, but only {available_counts[q_type]} are available.", "danger")
-                        return render_template('edit_quiz.html', quiz=updated_quiz)
+                        # General errors have no index
+                        validation_messages.append({'text': f"Display Error: You requested {count} '{q_type}' questions, but only {available_counts[q_type]} are available."})
             elif display_mode == 'total_score':
                 target = updated_quiz['display_config']['target_score']
                 if target > total_possible_score:
-                    flash(f"Validation Error: Target score of {target} is higher than the total possible score of all questions ({total_possible_score}).", "danger")
-                    return render_template('edit_quiz.html', quiz=updated_quiz)
+                    validation_messages.append({'text': f"Display Error: Target score of {target} is higher than the total possible score of all questions ({total_possible_score})."})
 
-            # 5. SAVE and redirect if all validation passes.
+            if validation_messages:
+                # Instead of flashing, pass the structured errors and indices to the template
+                return render_template('edit_quiz.html', quiz=updated_quiz, validation_errors=validation_messages, error_indices=error_indices)
+            
             save_quiz(quiz_id, updated_quiz)
             flash(f"Quiz '{updated_quiz['name']}' updated successfully!", "success")
             return redirect(url_for('admin.admin_dashboard'))

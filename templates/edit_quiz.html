@@ -10,7 +10,41 @@
             {% endfor %}
         {% endif %}
     {% endwith %}
-    
+        <!-- --- NEW: Interactive Validation Summary --- -->
+    {% if validation_errors %}
+      <article class="validation-summary">
+        <header><strong>Please fix the following errors:</strong></header>
+        <ul>
+          {% for error in validation_errors %}
+            <li>
+              {% if error.index is defined %}
+                <!-- This is a clickable link that JavaScript will handle -->
+                <a href="#" class="jump-to-error" data-target-index="{{ error.index }}">
+                  Question #{{ error.index + 1 }}: {{ error.text }}
+                </a>
+              {% else %}
+                <!-- Non-question errors are just displayed as text -->
+                {{ error.text }}
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </article>
+      <style>
+        .validation-summary { 
+            border: 1px solid var(--pico-color-red-500); 
+            background-color: var(--pico-color-red-100); 
+        }
+        .jump-to-error {
+            font-weight: 500;
+        }
+        .question-highlight {
+            transition: background-color 0.2s ease-in-out;
+            background-color: var(--pico-color-amber-200) !important;
+        }
+      </style>
+    {% endif %}
+
     <!-- ADD THIS ENTIRE BLOCK FOR PIN MANAGEMENT -->
     <article>
         <div class="grid">
@@ -110,6 +144,11 @@
         <button type="button" class="save-changes-btn contrast">Save Changes</button>
         <hr>
         <h3>Questions</h3>
+        <div class="grid">
+            <input type="search" id="question-search-input" placeholder="Search question text...">
+            <nav id="pagination-controls"></nav>
+        </div>
+
         <div id="questions-container">
             {% for question in quiz.questions %}
             <article class="question-article editor-section" id="question-{{ loop.index0 }}">
@@ -212,157 +251,402 @@
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 
 <!-- --- JAVASCRIPT FOR DYNAMIC FUNCTIONALITY --- -->
+<!-- ... all HTML and template tags above this line remain the same ... -->
+
+<!-- --- Store full quiz data for JavaScript to use --- -->
+<script id="quiz-data-json" type="application/json">
+    {{ quiz.questions | tojson | safe }}
+</script>
+
+<script src="{{ url_for('static', filename='js/pako.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/marked.min.js') }}"></script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+<!-- --- REWRITTEN JAVASCRIPT FOR PAGINATION AND PERFORMANCE --- -->
 <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const mainForm = document.getElementById('quiz-editor-form');
-        const hiddenInput = document.getElementById('quiz-data-hidden-input');
-        const questionsContainer = document.getElementById('questions-container');
-        let newQuestionCounter = 0;
+document.addEventListener('DOMContentLoaded', () => {
+    // --- STATE MANAGEMENT & CONFIG ---
+    const QUESTIONS_PER_PAGE = 25;
+    let allQuestions = JSON.parse(document.getElementById('quiz-data-json').textContent);
+    let filteredQuestions = [...allQuestions];
+    let currentPage = 1;
+
+    // --- DOM REFERENCES ---
+    const mainForm = document.getElementById('quiz-editor-form');
+    const hiddenInput = document.getElementById('quiz-data-hidden-input');
+    const questionsContainer = document.getElementById('questions-container');
+    const searchInput = document.getElementById('question-search-input');
+    const paginationControls = document.getElementById('pagination-controls');
+
+    // --- UTILITY FUNCTIONS ---
+    const debounce = (func, delay) => {
+        let timeout;
+        return function(...args) {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(this, args), delay);
+        };
+    };
+    
+    const uint8ArrayToBase64 = (uint8Array) => {
+        let CHUNK_SIZE = 0x8000;
+        let index = 0;
+        const length = uint8Array.length;
+        let result = '';
+        let slice;
+        while (index < length) {
+            slice = uint8Array.subarray(index, Math.min(index + CHUNK_SIZE, length));
+            result += String.fromCharCode.apply(null, slice);
+            index += CHUNK_SIZE;
+        }
+        return btoa(result);
+    };
+
+    // --- MARKDOWN & MATHJAX RENDERING ---
+    const renderWithMath = (text) => {
+        if (!text) return '';
+        const inlineMath = [];
+        const displayMath = [];
+        let protectedText = text.replace(/\\\([\s\S]*?\\\)/g, (match) => {
+            inlineMath.push(match);
+            return `%%IMATH${inlineMath.length - 1}%%`;
+        });
+        protectedText = protectedText.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
+            displayMath.push(match);
+            return `%%DMATH${displayMath.length - 1}%%`;
+        });
+        let html = marked.parse(protectedText);
+        html = html.replace(/%%IMATH(\d+)%%/g, (match, i) => inlineMath[i]);
+        html = html.replace(/%%DMATH(\d+)%%/g, (match, i) => displayMath[i]);
+        return html;
+    };
+
+    function renderPreview(inputElement) {
+        if (!inputElement) return;
+        const scope = inputElement.closest('.editor-section');
+        if (!scope) return;
         
-        // --- ADD this event listener for the new regenerate button ---
-        const regeneratePracticePinBtn = document.getElementById('regenerate-practice-pin-btn');
-        if (regeneratePracticePinBtn) {
-            regeneratePracticePinBtn.addEventListener('click', () => {
-                // Generate a simple 6-digit random number for the new PIN
-                const newPin = String(Math.floor(100000 + Math.random() * 900000));
-                document.getElementById('practice_pin').value = newPin;
-            });
+        const previewBox = scope.querySelector('.question-preview, .part-preview');
+        const textInput = scope.querySelector('.question-text-input, .part-text-input');
+        if (previewBox && textInput) {
+            previewBox.innerHTML = renderWithMath(textInput.value);
+            if (typeof MathJax !== 'undefined' && typeof MathJax.typeset === 'function') {
+                MathJax.typesetPromise([previewBox]);
+            }
         }
+    }
+    
+    function initializeAllPreviews() {
+        document.querySelectorAll('.editor-input').forEach(renderPreview);
+         if (typeof MathJax !== 'undefined' && typeof MathJax.typeset === 'function') {
+            MathJax.typesetPromise();
+        }
+    }
 
-        // --- NEW: Live Preview Logic ---
-        // --- MODIFICATION: updateAnswerGui will now create the inline previews ---
-        const updateAnswerGui = (optionsTextarea) => {
-            const container = optionsTextarea.closest('.question-article, .part-fieldset');
-            const guiContainer = container.querySelector('.answer-gui-container');
-            if (!guiContainer) return;
-            const questionTypeInput = container.querySelector('.question-type-input, .part-type-input');
-            if (!questionTypeInput) return;
-            const questionType = questionTypeInput.value;
-            const inputType = (questionType === 'multiple-choice') ? 'radio' : 'checkbox';
-            const uniqueName = `answer-gui-${Math.random()}`;
-            
-            let selectionToPreserve;
-            if (guiContainer.querySelectorAll('input').length > 0) {
-                selectionToPreserve = Array.from(guiContainer.querySelectorAll('input:checked')).map(el => el.value);
+    const updateAnswerGui = (optionsTextarea) => {
+        const container = optionsTextarea.closest('.question-article, .part-fieldset');
+        const guiContainer = container.querySelector('.answer-gui-container');
+        const questionTypeInput = container.querySelector('.question-type-input, .part-type-input');
+        if (!guiContainer || !questionTypeInput) return;
+
+        // Get the authoritative correct answer from the master 'allQuestions' array.
+        const article = optionsTextarea.closest('.question-article');
+        const index = parseInt(article.dataset.index, 10);
+        const questionData = allQuestions[index];
+        let selectionToPreserve = [];
+
+        if (questionData) {
+            const partFieldset = optionsTextarea.closest('.part-fieldset');
+            if (partFieldset) {
+                // This is a sub-question (part) of a multipart question
+                const partsContainer = article.querySelector('.multipart-parts');
+                const parts = Array.from(partsContainer.querySelectorAll('.part-fieldset'));
+                const partIndex = parts.indexOf(partFieldset);
+                const partAnswer = questionData.parts?.[partIndex]?.answer;
+                selectionToPreserve = partAnswer ? (Array.isArray(partAnswer) ? partAnswer : [partAnswer]) : [];
             } else {
-                const savedAnswerJson = optionsTextarea.dataset.answer;
-                const savedAnswer = savedAnswerJson ? JSON.parse(savedAnswerJson) : [];
-                selectionToPreserve = Array.isArray(savedAnswer) ? savedAnswer : [savedAnswer];
-            }
-            
-            guiContainer.innerHTML = '<legend>Correct Answer(s)</legend>'; // Reset
-            const options = optionsTextarea.value.split('\n').filter(opt => opt.trim() !== '');
-
-            options.forEach(optionText => {
-                const trimmedOption = optionText.trim();
-                const label = document.createElement('label');
-                const input = document.createElement('input');
-                input.type = inputType;
-                input.name = uniqueName;
-                input.value = trimmedOption;
-                if (selectionToPreserve.includes(trimmedOption)) {
-                    input.checked = true;
-                }
-
-                // Create a span to hold the rendered content
-                const previewSpan = document.createElement('span');
-                previewSpan.className = 'option-preview-content';
-                previewSpan.innerHTML = renderWithMath(optionText); // Use new render function
-
-                label.appendChild(input);
-                label.appendChild(previewSpan); // Append the rendered HTML, not plain text
-                guiContainer.appendChild(label);
-            });
-
-            // Re-scan for new MathJax content
-            if (typeof MathJax !== 'undefined' && typeof MathJax.typeset === 'function') {
-                MathJax.typeset();
-            }
-        };
-
-        const renderWithMath = (text) => {
-            if (!text) return '';
-            const inlineMath = [];
-            const displayMath = [];
-            // Protect inline math: \(...\)
-            let protectedText = text.replace(/\\\([\s\S]*?\\\)/g, (match) => {
-                inlineMath.push(match);
-                return `%%IMATH${inlineMath.length - 1}%%`;
-            });
-            // Protect display math: $$...$$
-            protectedText = protectedText.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
-                displayMath.push(match);
-                return `%%DMATH${displayMath.length - 1}%%`;
-            });
-
-            let html = marked.parse(protectedText);
-
-            // Restore protected math expressions
-            html = html.replace(/%%IMATH(\d+)%%/g, (match, i) => inlineMath[i]);
-            html = html.replace(/%%DMATH(\d+)%%/g, (match, i) => displayMath[i]);
-            
-            return html;
-        };
-
-
-        function renderPreview(inputElement) {
-            if (!inputElement) return;
-
-            // Determine the scope of the input that changed.
-            const partScope = inputElement.closest('.part-fieldset');
-            const questionScope = inputElement.closest('.question-article');
-
-            // Case 1: The input is inside a sub-question part. This must be checked first!
-            if (partScope) {
-                const previewBox = partScope.querySelector('.part-preview');
-                if (!previewBox) return; 
-
-                const partTextInput = partScope.querySelector('.part-text-input');
-                // Render the text from the part's own textarea.
-                previewBox.innerHTML = renderWithMath(partTextInput.value);
-
-            } 
-            // Case 2: The input is in the main question area (but not a sub-part).
-            else if (questionScope) {
-                const previewBox = questionScope.querySelector('.question-preview');
-                if (!previewBox) return;
-
-                const textInput = questionScope.querySelector('.question-text-input');
-                // Render the text from the main question's textarea.
-                previewBox.innerHTML = renderWithMath(textInput.value);
-            }
-            // Case 3: The input is the main instructions textarea.
-            else if (inputElement.id === 'instructions') {
-                const previewBox = document.getElementById('instructions-preview');
-                if (previewBox) {
-                    previewBox.innerHTML = renderWithMath(inputElement.value);
-                }
-            }
-            
-            // Re-scan for MathJax content after any of the above updates.
-            if (typeof MathJax !== 'undefined' && typeof MathJax.typeset === 'function') {
-                MathJax.typeset();
+                // This is a regular question
+                const questionAnswer = questionData.answer;
+                selectionToPreserve = questionAnswer ? (Array.isArray(questionAnswer) ? questionAnswer : [questionAnswer]) : [];
             }
         }
-        // Use a single, efficient event listener on the form to handle all live updates
-        mainForm.addEventListener('input', (event) => {
-            if (event.target.classList.contains('editor-input')) {
-                renderPreview(event.target);
+        
+        const questionType = questionTypeInput.value;
+        const inputType = (questionType === 'multiple-choice') ? 'radio' : 'checkbox';
+        const uniqueName = `answer-gui-${Math.random()}`;
+        
+        guiContainer.innerHTML = '<legend>Correct Answer(s)</legend>';
+        const options = optionsTextarea.value.split('\n').filter(opt => opt.trim() !== '');
+
+        options.forEach(optionText => {
+            const trimmedOption = optionText.trim();
+            const label = document.createElement('label');
+            const input = document.createElement('input');
+            input.type = inputType;
+            input.name = uniqueName;
+            input.value = trimmedOption;
+            if (selectionToPreserve.includes(trimmedOption)) {
+                input.checked = true;
             }
+
+            const previewSpan = document.createElement('span');
+            previewSpan.className = 'option-preview-content';
+            previewSpan.innerHTML = renderWithMath(optionText);
+
+            label.appendChild(input);
+            label.appendChild(previewSpan);
+            guiContainer.appendChild(label);
         });
 
-        // A function to render all previews on the page at once
-        function initializeAllPreviews() {
-            document.querySelectorAll('.editor-input').forEach(renderPreview);
+        // Explicitly tell MathJax to render the math inside the new options.
+        if (typeof MathJax !== 'undefined' && typeof MathJax.typesetPromise === 'function') {
+            MathJax.typesetPromise([guiContainer]);
         }
-        // --- End of Preview Logic ---
+    };
 
-        const buildQuizObject = () => {
-            const quizObj = {
-                // MODIFIED: Added instructions to the object being built
-                instructions: document.getElementById('instructions').value,
+    // --- FULL QUESTION ELEMENT CREATION ---
+    const createQuestionElement = (questionData, originalIndex) => {
+        const template = document.getElementById(`template-${questionData.type}`);
+        const fragment = document.importNode(template.content, true);
+        const article = fragment.querySelector('.question-article');
+        
+        article.id = `question-${originalIndex}`;
+        article.dataset.index = originalIndex;
+
+        article.querySelector('.q-number').textContent = originalIndex + 1;
+        article.querySelector('.question-text-input').value = questionData.text;
+
+        if (questionData.type === 'multiple-choice' || questionData.type === 'multiple-select') {
+            article.querySelector('.mc-options-textarea').value = questionData.options ? questionData.options.join('\n') : '';
+            article.querySelector('.question-score-input').value = questionData.score || 1;
+        } else if (questionData.type === 'short-answer') {
+            article.querySelector('.question-answer-input').value = questionData.answer || '';
+            article.querySelector('.question-score-input').value = questionData.score || 1;
+        } else if (questionData.type === 'multipart') {
+            const partsContainer = article.querySelector('.multipart-parts');
+            (questionData.parts || []).forEach(partData => {
+                const partTemplate = document.getElementById(`template-part-${partData.type}`);
+                const partFragment = document.importNode(partTemplate.content, true);
+                const partFieldset = partFragment.querySelector('.part-fieldset');
+                
+                partFieldset.querySelector('.part-text-input').value = partData.text || '';
+                partFieldset.querySelector('.part-score-input').value = partData.score || 1;
+
+                if (partData.type === 'multiple-choice' || partData.type === 'multiple-select') {
+                    partFieldset.querySelector('.mc-options-textarea').value = partData.options ? partData.options.join('\n') : '';
+                } else {
+                    partFieldset.querySelector('.part-answer-input').value = partData.answer || '';
+                }
+                partsContainer.appendChild(partFragment);
+            });
+        }
+        return article;
+    };
+    
+    // --- CORE PAGINATION & SEARCH LOGIC ---
+    const renderPage = (page) => {
+        currentPage = page;
+        questionsContainer.innerHTML = '';
+
+        const start = (page - 1) * QUESTIONS_PER_PAGE;
+        const end = start + QUESTIONS_PER_PAGE;
+        const questionsToRender = filteredQuestions.slice(start, end);
+
+        questionsToRender.forEach(questionData => {
+            const originalIndex = allQuestions.indexOf(questionData);
+            const questionElement = createQuestionElement(questionData, originalIndex);
+            questionsContainer.appendChild(questionElement);
+        });
+
+        // Initialize dynamic elements for the new page
+        document.querySelectorAll('.mc-options-textarea').forEach(updateAnswerGui);
+        initializeAllPreviews();
+        renderPagination();
+    };
+
+    const renderPagination = () => {
+        paginationControls.innerHTML = '';
+        const pageCount = Math.ceil(filteredQuestions.length / QUESTIONS_PER_PAGE);
+        if (pageCount <= 1) return;
+
+        const prevButton = document.createElement('button');
+        prevButton.type = 'button';
+        prevButton.className = 'outline';
+        prevButton.textContent = '‹ Prev';
+        prevButton.disabled = currentPage === 1;
+        prevButton.addEventListener('click', () => renderPage(currentPage - 1));
+
+        const nextButton = document.createElement('button');
+        nextButton.type = 'button';
+        nextButton.className = 'outline';
+        nextButton.textContent = 'Next ›';
+        nextButton.disabled = currentPage === pageCount;
+        nextButton.addEventListener('click', () => renderPage(currentPage + 1));
+        
+        const pageInfo = document.createElement('span');
+        pageInfo.textContent = ` Page ${currentPage} of ${pageCount} (${filteredQuestions.length} questions) `;
+        pageInfo.style.textAlign = 'center';
+        pageInfo.style.lineHeight = 'var(--pico-form-element-height)';
+
+        paginationControls.append(prevButton, pageInfo, nextButton);
+    };
+
+    const handleSearch = () => {
+        const searchTerm = searchInput.value.toLowerCase().trim();
+        if (!searchTerm) {
+            filteredQuestions = [...allQuestions];
+        } else {
+            filteredQuestions = allQuestions.filter(q => 
+                (q.text && q.text.toLowerCase().includes(searchTerm)) ||
+                (q.parts && q.parts.some(p => p.text && p.text.toLowerCase().includes(searchTerm)))
+            );
+        }
+        renderPage(1);
+    };
+
+    // --- DATA SYNC (DOM -> JAVASCRIPT STATE) ---
+    const updateQuestionDataFromDOM = (element) => {
+        const article = element.closest('.question-article');
+        if (!article) return;
+        
+        const index = parseInt(article.dataset.index, 10);
+        if (isNaN(index)) return;
+
+        const qType = article.querySelector('.question-type-input').value;
+        const qText = article.querySelector('.question-text-input').value;
+        let questionData = { text: qText, type: qType };
+
+        if (qType === 'multipart') {
+            questionData.parts = [];
+            article.querySelectorAll('.part-fieldset').forEach(part => {
+                const pType = part.querySelector('.part-type-input').value;
+                const pText = part.querySelector('.part-text-input').value;
+                let pData = { text: pText, type: pType, score: parseInt(part.querySelector('.part-score-input').value) || 1 };
+                if (pType === 'multiple-select') {
+                    pData.answer = Array.from(part.querySelectorAll('.answer-gui-container input:checked')).map(el => el.value);
+                    pData.options = part.querySelector('.mc-options-textarea').value.split('\n').filter(Boolean).map(s => s.trim());
+                } else if (pType === 'multiple-choice') {
+                    const checkedRadio = part.querySelector('.answer-gui-container input:checked');
+                    pData.answer = checkedRadio ? checkedRadio.value : null;
+                    pData.options = part.querySelector('.mc-options-textarea').value.split('\n').filter(Boolean).map(s => s.trim());
+                } else {
+                    pData.answer = part.querySelector('.part-answer-input').value;
+                }
+                questionData.parts.push(pData);
+            });
+        } else {
+            questionData.score = parseInt(article.querySelector('.question-score-input').value) || 1;
+            if (qType === 'multiple-select') {
+                questionData.answer = Array.from(article.querySelectorAll('.answer-gui-container input:checked')).map(el => el.value);
+                questionData.options = article.querySelector('.mc-options-textarea').value.split('\n').filter(Boolean).map(s => s.trim());
+            } else if (qType === 'multiple-choice') {
+                const checkedRadio = article.querySelector('.answer-gui-container input:checked');
+                questionData.answer = checkedRadio ? checkedRadio.value : null;
+                questionData.options = article.querySelector('.mc-options-textarea').value.split('\n').filter(Boolean).map(s => s.trim());
+            } else {
+                questionData.answer = article.querySelector('.question-answer-input').value;
+            }
+        }
+        allQuestions[index] = questionData;
+    };
+
+
+    // --- EVENT LISTENERS ---
+    searchInput.addEventListener('input', debounce(handleSearch, 300));
+    
+    // Listen for changes inside the questions container to keep `allQuestions` array in sync
+    questionsContainer.addEventListener('change', (e) => updateQuestionDataFromDOM(e.target));
+    questionsContainer.addEventListener('input', debounce((e) => {
+        updateQuestionDataFromDOM(e.target);
+        if(e.target.classList.contains('editor-input')){
+            renderPreview(e.target);
+        }
+        if (e.target.matches('.mc-options-textarea')) {
+            updateAnswerGui(e.target);
+        }
+    }, 250));
+
+    // General event delegation for add/delete buttons
+    document.body.addEventListener('click', (e) => {
+        if (e.target.matches('.jump-to-error')) {
+            e.preventDefault();
+            const index = parseInt(e.target.dataset.targetIndex, 10);
+            if (isNaN(index)) return;
+
+            const targetPage = Math.floor(index / QUESTIONS_PER_PAGE) + 1;
+            
+            // If we are not already on the correct page, render it.
+            if (currentPage !== targetPage) {
+                renderPage(targetPage);
+            }
+
+            // Use setTimeout to ensure the element exists after a potential page render
+            setTimeout(() => {
+                const targetElement = document.getElementById(`question-${index}`);
+                if (targetElement) {
+                    targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // Add a temporary highlight for better visual feedback
+                    targetElement.classList.add('question-highlight');
+                    setTimeout(() => {
+                        targetElement.classList.remove('question-highlight');
+                    }, 2000); // Highlight lasts for 2 seconds
+                }
+            }, 100); // A short delay is enough
+        }
+
+        if (e.target.matches('.delete-question-btn')) {
+            e.preventDefault();
+            const article = e.target.closest('.question-article');
+            const index = parseInt(article.dataset.index, 10);
+            if (confirm('Are you sure you want to delete this question?')) {
+                allQuestions.splice(index, 1);
+                handleSearch(); // Re-filter and re-render
+            }
+        }
+        if (e.target.matches('.delete-part-btn')) {
+            e.preventDefault();
+            if (confirm('Are you sure you want to delete this part?')) {
+                e.target.closest('.part-fieldset').remove();
+            }
+        }
+        if (e.target.matches('.add-part-btn')) {
+            e.preventDefault();
+            addPart(e.target.closest('.question-article'), e.target.dataset.partType);
+        }
+    });
+
+    mainForm.addEventListener('input', debounce((e) => {
+        // Update the live preview if the user is typing in an editor box
+        if (e.target.classList.contains('editor-input')) {
+            renderPreview(e.target);
+        }
+        // Update the multiple-choice GUI if options are changed
+        if (e.target.matches('.mc-options-textarea')) {
+            updateAnswerGui(e.target);
+        }
+        // Update the backing JavaScript data model from the DOM element that changed
+        updateQuestionDataFromDOM(e.target);
+    }, 200));
+
+    mainForm.addEventListener('change', (e) => {
+        // This targets checkboxes and radio buttons in the answer GUI.
+        if (e.target.matches('.answer-gui-container input')) {
+            updateQuestionDataFromDOM(e.target);
+        }
+    });
+    
+    // Save button logic
+    document.querySelectorAll('.save-changes-btn').forEach(button => {
+        button.addEventListener('click', () => {
+            document.querySelectorAll('.save-changes-btn').forEach(btn => {
+                btn.setAttribute('aria-busy', 'true');
+                btn.textContent = 'Compressing & Saving...';
+            });
+            
+            // The build object is now simpler as it uses the JS array as the source of truth
+            const quizData = {
                 name: document.getElementById('quiz_name').value,
                 timer: parseInt(document.getElementById('quiz_timer').value),
+                instructions: document.getElementById('instructions').value,
                 is_reviewable: document.getElementById('is_reviewable').checked,
                 practice_pin: document.getElementById('practice_pin').value,
                 practice_mode_config: {
@@ -380,170 +664,44 @@
                     },
                     target_score: parseInt(document.querySelector('input[name="target_score"]').value)
                 },
-                questions: []
+                questions: allQuestions
             };
-            document.querySelectorAll('.question-article').forEach(article => {
-                const qType = article.querySelector('.question-type-input').value;
-                const qText = article.querySelector('.question-text-input').value;
-                let questionData = { text: qText, type: qType };
-                if (qType === 'multipart') {
-                    questionData.parts = [];
-                    article.querySelectorAll('.part-fieldset').forEach(part => {
-                        const pType = part.querySelector('.part-type-input').value;
-                        const pText = part.querySelector('.part-text-input').value;
-                        let pData = { text: pText, type: pType, score: parseInt(part.querySelector('.part-score-input').value) };
-                        if (pType === 'multiple-select') {
-                            pData.answer = Array.from(part.querySelectorAll('.answer-gui-container input:checked')).map(el => el.value);
-                            pData.options = part.querySelector('.mc-options-textarea').value.split('\n').filter(Boolean).map(s => s.trim());
-                        } else if (pType === 'multiple-choice') {
-                            const checkedRadio = part.querySelector('.answer-gui-container input:checked');
-                            pData.answer = checkedRadio ? checkedRadio.value : null;
-                            pData.options = part.querySelector('.mc-options-textarea').value.split('\n').filter(Boolean).map(s => s.trim());
-                        } else {
-                            pData.answer = part.querySelector('.part-answer-input').value;
-                        }
-                        questionData.parts.push(pData);
-                    });
-                } else { // Not multipart
-                    questionData.score = parseInt(article.querySelector('.question-score-input').value);
-                    if (qType === 'multiple-select') {
-                        questionData.answer = Array.from(article.querySelectorAll('.answer-gui-container input:checked')).map(el => el.value);
-                        questionData.options = article.querySelector('.mc-options-textarea').value.split('\n').filter(Boolean).map(s => s.trim());
-                    } else if (qType === 'multiple-choice') {
-                        const checkedRadio = article.querySelector('.answer-gui-container input:checked');
-                        questionData.answer = checkedRadio ? checkedRadio.value : null;
-                        questionData.options = article.querySelector('.mc-options-textarea').value.split('\n').filter(Boolean).map(s => s.trim());
-                    } else { // short-answer
-                        questionData.answer = article.querySelector('.question-answer-input').value;
-                    }
-                }
-                quizObj.questions.push(questionData);
-            });
-            return quizObj;
-        };
 
-        const updateQuestionNumbers = () => {
-            questionsContainer.querySelectorAll('.question-article').forEach((article, index) => {
-                const qNumSpan = article.querySelector('.q-number');
-                if (qNumSpan) qNumSpan.textContent = index + 1;
-            });
-        };
-
-        const toggleConfigView = () => {
-            const selectedMode = document.querySelector('input[name="display_mode"]:checked').value;
-            document.getElementById('config-question-count').style.display = (selectedMode === 'question_count') ? 'grid' : 'none';
-            document.getElementById('config-total-score').style.display = (selectedMode === 'total_score') ? 'block' : 'none';
-        };
-
-        const addPart = (multipartArticle, partType) => {
-            const partTemplate = document.getElementById(`template-part-${partType}`);
-            const partContainer = multipartArticle.querySelector('.multipart-parts');
-            const newPartFragment = document.importNode(partTemplate.content, true);
-            const newPartElement = newPartFragment.querySelector('.part-fieldset');
-            partContainer.appendChild(newPartFragment);
-            
-            // Re-initialize GUIs and Previews for the new part
-            newPartElement.querySelectorAll('.mc-options-textarea').forEach(updateAnswerGui);
-            newPartElement.querySelectorAll('.editor-input').forEach(renderPreview);
-        };
-        
-        const uint8ArrayToBase64 = (uint8Array) => {
-            let CHUNK_SIZE = 0x8000;
-            let index = 0;
-            const length = uint8Array.length;
-            let result = '';
-            let slice;
-            while (index < length) {
-                slice = uint8Array.subarray(index, Math.min(index + CHUNK_SIZE, length));
-                result += String.fromCharCode.apply(null, slice);
-                index += CHUNK_SIZE;
-            }
-            return btoa(result);
-        };
-
-        document.querySelectorAll('.save-changes-btn').forEach(button => {
-            button.addEventListener('click', () => {
-                // Set all save buttons to the busy state
-                document.querySelectorAll('.save-changes-btn').forEach(btn => {
-                    btn.setAttribute('aria-busy', 'true');
-                    btn.textContent = 'Compressing & Saving...';
-                });
-
-                try {
-                    const quizData = buildQuizObject();
-                    const jsonString = JSON.stringify(quizData);
-                    const compressed = pako.deflate(jsonString);
-                    const base64Encoded = uint8ArrayToBase64(compressed);
-                    hiddenInput.value = base64Encoded;
-                    mainForm.submit();
-                } catch (error) {
-                    console.error("Error building or compressing quiz object for submission:", error);
-                    alert("A critical error occurred while trying to save. Please check the browser console (F12) for details.");
-                    // Reset all save buttons on error
-                    document.querySelectorAll('.save-changes-btn').forEach(btn => {
-                        btn.removeAttribute('aria-busy');
-                        btn.textContent = 'Save Changes';
-                    });
-                }
-            });
+            const jsonString = JSON.stringify(quizData);
+            const compressed = pako.deflate(jsonString);
+            const base64Encoded = uint8ArrayToBase64(compressed);
+            hiddenInput.value = base64Encoded;
+            mainForm.submit();
         });
-
-        document.body.addEventListener('input', e => {
-            if (e.target.matches('.mc-options-textarea')) updateAnswerGui(e.target);
-        });
-
-        document.body.addEventListener('click', (e) => {
-            if (e.target.matches('.delete-question-btn')) {
-                e.preventDefault();
-                if (confirm('Are you sure you want to delete this question?')) {
-                    e.target.closest('.question-article').remove();
-                    updateQuestionNumbers();
-                }
-            }
-            if (e.target.matches('.delete-part-btn')) {
-                e.preventDefault();
-                if (confirm('Are you sure you want to delete this part?')) {
-                    e.target.closest('.part-fieldset').remove();
-                }
-            }
-            if (e.target.matches('.add-part-btn')) {
-                e.preventDefault();
-                addPart(e.target.closest('.question-article'), e.target.dataset.partType);
-            }
-        });
-        
-        document.getElementById('add-question-btn').addEventListener('click', () => {
-            const questionType = document.getElementById('new-question-type').value;
-            const template = document.getElementById(`template-${questionType}`);
-            const newArticleFragment = document.importNode(template.content, true);
-            questionsContainer.appendChild(newArticleFragment);
-            
-            const newArticleElement = questionsContainer.lastElementChild;
-            newArticleElement.querySelectorAll('.mc-options-textarea').forEach(updateAnswerGui);
-            updateQuestionNumbers();
-            
-            // MODIFIED: Initialize previews for the newly added question
-            newArticleElement.querySelectorAll('.editor-input').forEach(renderPreview);
-        });
-
-        // --- INITIALIZE EVERYTHING ON PAGE LOAD ---
-        const errorQIndex = {{ error_q | tojson if error_q is defined else 'null' }};
-        if (errorQIndex !== null) {
-            const errorArticle = document.getElementById(`question-${errorQIndex}`);
-            if (errorArticle) {
-                errorArticle.style.border = '2px solid var(--pico-color-red-500)';
-                errorArticle.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-        }
-        
-        document.querySelectorAll('input[name="display_mode"]').forEach(radio => radio.addEventListener('change', toggleConfigView));
-        
-        document.querySelectorAll('.mc-options-textarea').forEach(updateAnswerGui);
-        toggleConfigView();
-        updateQuestionNumbers();
-        
-        initializeAllPreviews(); // Initial render of all previews
     });
 
+    // --- INITIALIZATION ---
+    
+    // Handle validation error from server
+    const errorIndices = {{ error_indices | tojson if error_indices is defined else 'null' }};
+    
+    if (errorIndices && errorIndices.length > 0) {
+        const firstErrorIndex = errorIndices[0];
+        const errorPage = Math.floor(firstErrorIndex / QUESTIONS_PER_PAGE) + 1;
+        renderPage(errorPage);
+        
+        setTimeout(() => {
+            errorIndices.forEach(index => {
+                const errorArticle = document.getElementById(`question-${index}`);
+                if (errorArticle) {
+                    errorArticle.style.border = '2px solid var(--pico-color-red-500)';
+                }
+            });
+            const firstErrorArticle = document.getElementById(`question-${firstErrorIndex}`);
+            if (firstErrorArticle) {
+                    firstErrorArticle.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 0);
+
+    } else {
+        // Standard initial render if there are no errors.
+        renderPage(1);
+    }
+});
 </script>
 {% endblock %}
