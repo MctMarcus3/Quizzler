@@ -320,27 +320,41 @@ document.addEventListener('DOMContentLoaded', () => {
         return html;
     };
 
+    // --- LIVE PREVIEW FUNCTION ---
     function renderPreview(inputElement) {
         if (!inputElement) return;
+
+        // Special case for the main instructions textarea
+        if (inputElement.id === 'instructions') {
+            const previewBox = document.getElementById('instructions-preview');
+            if (previewBox) {
+                previewBox.innerHTML = renderWithMath(inputElement.value);
+                if (typeof MathJax !== 'undefined' && typeof MathJax.typesetPromise === 'function') {
+                    MathJax.typesetPromise([previewBox]);
+                }
+            }
+            return; // Done with this case.
+        }
+
+        // General case for questions and parts within an .editor-section
         const scope = inputElement.closest('.editor-section');
         if (!scope) return;
         
         const previewBox = scope.querySelector('.question-preview, .part-preview');
-        const textInput = scope.querySelector('.question-text-input, .part-text-input');
-        if (previewBox && textInput) {
-            previewBox.innerHTML = renderWithMath(textInput.value);
-            if (typeof MathJax !== 'undefined' && typeof MathJax.typeset === 'function') {
+        // NOTE: The text input is the element that triggered the event.
+        if (previewBox) {
+            previewBox.innerHTML = renderWithMath(inputElement.value);
+            if (typeof MathJax !== 'undefined' && typeof MathJax.typesetPromise === 'function') {
                 MathJax.typesetPromise([previewBox]);
             }
         }
     }
     
     function initializeAllPreviews() {
+        // Trigger the preview render for all relevant inputs on the page.
         document.querySelectorAll('.editor-input').forEach(renderPreview);
-         if (typeof MathJax !== 'undefined' && typeof MathJax.typeset === 'function') {
-            MathJax.typesetPromise();
-        }
     }
+
 
     const updateAnswerGui = (optionsTextarea) => {
         const container = optionsTextarea.closest('.question-article, .part-fieldset');
