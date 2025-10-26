@@ -201,35 +201,23 @@ def leaderboard(quiz_id):
 
 @student_bp.route('/quiz/review/<quiz_id>')
 def review_quiz(quiz_id):
-    """
-    Displays the student's answers and the correct answers for a completed quiz.
-    This is the final step in the student workflow.
-    """
-    # 1. Get the unique ID for this review session from the user's cookie.
-    # We pop it to ensure it can only be used once.
     review_session_id = session.pop('review_session_id', None)
 
     if not review_session_id:
         flash("Review data has expired or is no longer available. Please start a new quiz.", "warning")
         return redirect(url_for('student.home'))
         
-    # 2. Load the large review data from the corresponding temporary file on the server.
-    # The load_temp_session_data function also deletes the file after reading.
     review_items = load_temp_session_data(review_session_id)
     
-    # 3. Handle the case where the temporary file might have been deleted or expired.
     if not review_items:
         flash("Review data could not be found. It may have expired.", "warning")
         return redirect(url_for('student.home'))
     
-    # 4. Get the quiz's name for display purposes.
     quiz = get_quiz_by_id(quiz_id)
     if not quiz:
-        # Failsafe in case the quiz was deleted between submission and review.
         flash("The quiz you are trying to review could not be found.", "danger")
         return redirect(url_for('student.home'))
 
-    # 5. Render the review page with the loaded data.
     return render_template('review.html', review_items=review_items, quiz_name=quiz['name'])
 
 @student_bp.route('/practice/api/questions', methods=['POST'])
@@ -238,7 +226,6 @@ def practice_questions_api():
     quiz_id = session['quiz_id']
     quiz = get_quiz_by_id(quiz_id)
     
-    # This is the robust validation and selection logic from your previous request
     practice_config = quiz.get('practice_mode_config', {})
     allow_student_selection = practice_config.get('allow_student_selection', False)
     max_limit = practice_config.get('max_questions_limit', 10)
@@ -280,7 +267,6 @@ def practice_questions_api():
 
     random.shuffle(questions_to_practice)
     
-    # IMPORTANT: We return the questions as JSON, we DO NOT save to session.
     return jsonify(questions_to_practice)
 
 @student_bp.route('/practice/setup')
@@ -297,5 +283,4 @@ def practice_setup():
     for question in quiz.get('questions', []):
         available_counts[question['type']] += 1
     
-    # Render the new SPA template
     return render_template('practice_spa.html', quiz=quiz, available_counts=available_counts)

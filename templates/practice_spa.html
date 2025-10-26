@@ -45,9 +45,7 @@
     <article id="summary-view" style="display:none;">
         <header><h2>Practice Complete!</h2></header>
         <p>Great work! You have completed the practice session.</p>
-        <!-- MODIFIED: Use a group for better button layout -->
         <div role="group">
-            <!-- ADD THIS "TRY AGAIN" BUTTON -->
             <button id="try-again-btn">Try Again</button>
             <a href="{{ url_for('student.home') }}" role="button" class="secondary">Back to Home</a>
         </div>
@@ -57,15 +55,21 @@
 <style>
     #answer-inputs label {
         display: flex;
-        align-items: flex-start; /* Aligns items to the top */
+        align-items: flex-start;
         margin-bottom: 0.75rem;
     }
-    #answer-inputs input {
-        margin-top: 0.3em; /* Vertically centers the radio/checkbox with the first line of text */
+    #answer-inputs input[type="radio"],
+    #answer-inputs input[type="checkbox"] {
+        margin-top: 0.3em;
         margin-right: 0.5em;
     }
     .option-content p {
-        display: inline; /* Prevents marked.js from creating block-level paragraphs */
+        display: inline;
+    }
+    .multipart-part {
+        border-left: 2px solid var(--pico-muted-border-color);
+        padding-left: 1rem;
+        margin-top: 1.5rem;
     }
 </style>
 <script>
@@ -92,27 +96,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const feedbackArea = document.getElementById('feedback-area');
     const feedbackText = document.getElementById('feedback-text');
     const nextBtn = document.getElementById('next-question-btn');
-
-    // --- ADD reference to the new "Try Again" button ---
     const tryAgainBtn = document.getElementById('try-again-btn');
+
     const renderWithMath = (text) => {
         if (!text) return '';
         const inlineMath = [];
         const displayMath = [];
-        // Protect inline math: \(...\)
         let protectedText = text.replace(/\\\([\s\S]*?\\\)/g, (match) => {
             inlineMath.push(match);
             return `%%IMATH${inlineMath.length - 1}%%`;
         });
-        // Protect display math: $$...$$
         protectedText = protectedText.replace(/\$\$[\s\S]*?\$\$/g, (match) => {
             displayMath.push(match);
             return `%%DMATH${displayMath.length - 1}%%`;
         });
         let html = marked.parse(protectedText);
-        // Restore protected math expressions
         html = html.replace(/%%IMATH(\d+)%%/g, (match, i) => inlineMath[i]);
-        html = html.replace(/<p>%%DMATH(\d+)%%<\/p>/g, (match, i) => `%%DMATH${i}%%`); // Handle block elements
+        html = html.replace(/<p>%%DMATH(\d+)%%<\/p>/g, (match, i) => `%%DMATH${i}%%`);
         html = html.replace(/%%DMATH(\d+)%%/g, (match, i) => displayMath[i]);
         return html;
     };
@@ -143,7 +143,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             questions = await response.json();
             
-            // --- Transition to Quiz View ---
             setupView.style.display = 'none';
             quizView.style.display = 'block';
             renderCurrentQuestion();
@@ -155,22 +154,44 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // --- MODIFIED: Heavily updated answer checking logic ---
     answerForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const currentQuestion = questions[currentIndex];
         const userAnswerData = new FormData(answerForm);
         let isCorrect = false;
 
-        // --- Simplified Answer Checking (expand as needed) ---
-        if (currentQuestion.type === 'multiple-select') {
+        if (currentQuestion.type === 'multipart') {
+            let allPartsCorrect = true;
+            const correctAnswersForFeedback = [];
+
+            currentQuestion.parts.forEach((part, index) => {
+                correctAnswersForFeedback.push(`Part ${index + 1}: ${part.answer}`); // Collect correct answers for feedback
+                const inputName = `answer_part_${index}`;
+
+                if (part.type === 'multiple-select') {
+                    const userAnswers = new Set(userAnswerData.getAll(inputName));
+                    const correctAnswers = new Set(part.answer);
+                    if (userAnswers.size !== correctAnswers.size || ![...userAnswers].every(ans => correctAnswers.has(ans))) {
+                        allPartsCorrect = false;
+                    }
+                } else {
+                    const userAnswer = userAnswerData.get(inputName) || '';
+                    if (userAnswer.trim().toLowerCase() !== String(part.answer).toLowerCase()) {
+                        allPartsCorrect = false;
+                    }
+                }
+            });
+            isCorrect = allPartsCorrect;
+
+        } else if (currentQuestion.type === 'multiple-select') {
             const userAnswers = new Set(userAnswerData.getAll('answer'));
             const correctAnswers = new Set(currentQuestion.answer);
             isCorrect = userAnswers.size === correctAnswers.size && [...userAnswers].every(ans => correctAnswers.has(ans));
         } else {
-            const userAnswer = userAnswerData.get('answer');
+            const userAnswer = userAnswerData.get('answer') || '';
             isCorrect = userAnswer.trim().toLowerCase() === String(currentQuestion.answer).toLowerCase();
         }
-
 
         feedbackArea.style.display = 'block';
         if (isCorrect) {
@@ -178,8 +199,17 @@ document.addEventListener('DOMContentLoaded', () => {
             feedbackText.style.color = 'var(--pico-color-green-500)';
         } else {
             const correctAnswerHtml = Array.isArray(currentQuestion.answer) ? currentQuestion.answer.join(', ') : currentQuestion.answer;
-            // Use the new, robust render function here
-            feedbackText.innerHTML = `Incorrect. The correct answer was: <strong>${renderWithMath(String(correctAnswerHtml))}</strong>`;
+            let feedbackHtml = `Incorrect. The correct answer was: <strong>${renderWithMath(String(correctAnswerHtml))}</strong>`;
+            
+            // Provide detailed feedback for multipart questions
+            if (currentQuestion.type === 'multipart') {
+                 const detailedAnswers = currentQuestion.parts.map((part, index) => 
+                    `<li>${renderWithMath(part.text)} <strong>Answer: ${renderWithMath(String(part.answer))}</strong></li>`
+                 ).join('');
+                 feedbackHtml = `Incorrect. The correct answers were:<ul>${detailedAnswers}</ul>`;
+            }
+
+            feedbackText.innerHTML = feedbackHtml;
             feedbackText.style.color = 'var(--pico-color-red-500)';
         }
         
@@ -198,36 +228,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- ADD this new event listener for the "Try Again" button ---
     tryAgainBtn.addEventListener('click', () => {
-        // Reset the application state
         questions = [];
         currentIndex = 0;
-
-        // Transition back to the setup view
         summaryView.style.display = 'none';
         setupView.style.display = 'block';
-
-        // Optional: Reset the error message and button state on the setup form
         setupError.style.display = 'none';
         startBtn.removeAttribute('aria-busy');
     });
-    // --- Render Functions ---
+
+    // --- MODIFIED: Heavily updated rendering logic ---
     function renderCurrentQuestion() {
         feedbackArea.style.display = 'none';
         answerForm.querySelector('button').style.display = 'block';
 
         const question = questions[currentIndex];
         qCounter.textContent = `Question ${currentIndex + 1} of ${questions.length}`;
-        // Use the new, robust render function here
         qText.innerHTML = renderWithMath(question.text); 
-        answerInputs.innerHTML = ''; // Clear previous inputs
+        answerInputs.innerHTML = '';
 
         if (question.type === 'multiple-choice' || question.type === 'multiple-select') {
             const inputType = question.type === 'multiple-choice' ? 'radio' : 'checkbox';
             question.options.forEach(opt => {
                 const renderedOption = renderWithMath(opt);
-                // --- MODIFIED: The rendered content is now part of the label's innerHTML ---
                 answerInputs.innerHTML += `
                     <label>
                         <input type="${inputType}" name="answer" value="${opt}">
@@ -235,9 +258,34 @@ document.addEventListener('DOMContentLoaded', () => {
                     </label>
                 `;
             });
-        } else { // short-answer and multipart (simplified)
-            answerInputs.innerHTML = '<input type="text" name="answer" required>';
+        } else if (question.type === 'multipart') {
+            // Loop through each part and render it according to its own type
+            question.parts.forEach((part, index) => {
+                const inputName = `answer_part_${index}`;
+                let partHtml = `<div class="multipart-part">`;
+                partHtml += `<div>${renderWithMath(part.text)}</div>`;
+
+                if (part.type === 'multiple-choice' || part.type === 'multiple-select') {
+                    const inputType = part.type === 'multiple-choice' ? 'radio' : 'checkbox';
+                    part.options.forEach(opt => {
+                        partHtml += `
+                            <label>
+                                <input type="${inputType}" name="${inputName}" value="${opt}">
+                                <span class="option-content">${renderWithMath(opt)}</span>
+                            </label>
+                        `;
+                    });
+                } else { // 'short-answer'
+                     partHtml += `<input type="text" name="${inputName}" required autocomplete="off">`;
+                }
+                partHtml += `</div>`;
+                answerInputs.innerHTML += partHtml;
+            });
         }
+        else { // short-answer
+            answerInputs.innerHTML = '<input type="text" name="answer" required autocomplete="off">';
+        }
+
         if (typeof MathJax !== 'undefined' && typeof MathJax.typeset === 'function') {
             MathJax.typeset();
         }
